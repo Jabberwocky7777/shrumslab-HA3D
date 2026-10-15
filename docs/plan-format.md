@@ -71,7 +71,9 @@ House-control's air conditioners: `id`, `name`, `room`, `wall` (`north`, `south`
 `"link": { "service": "homeassistant", "id": "climate.your_ac" }` and, optionally, a room
 thermometer with `"sensor": { "service": "homeassistant", "id": "sensor.your_temperature" }`. The
 sheet then offers the modes and fan speeds the entity reports. Without `min`/`max` the range comes
-from the entity.
+from the entity. Temperatures (`min`, `max`, scene `target`, `outdoorTemp`) are in Home
+Assistant's unit (or the card's `temperature_unit`); in °F an AC with no range and no entity
+defaults to 60–86.
 
 ## `entities` (new in this card)
 

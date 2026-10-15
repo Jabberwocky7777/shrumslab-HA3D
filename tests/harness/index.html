@@ -18,6 +18,7 @@
       const config = { type: 'custom:house-control-card', ...Card.getStubConfig(), height: '100vh' };
       const hass = createMockHass({
         admin: params.get('admin') !== '0',
+        fahrenheit: params.get('unit') === 'F',
         dashboard: { views: [{ type: 'panel', cards: [structuredClone(config)] }] },
       });
       const card = document.createElement('house-control-card');

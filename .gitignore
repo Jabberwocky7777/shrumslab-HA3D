@@ -24,3 +24,4 @@ plans/*
 !images/**/*.jpg
 !docs/**/*.jpeg
 !images/**/*.jpeg
+/gitleaks

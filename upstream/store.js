@@ -10,10 +10,14 @@ function defaultLight(cfg) {
   return { on: false, brightness: 0.8, temp: 3000, color: cfg.color || null };
 }
 
-function defaultAC(cfg, outdoor) {
+// ha3d: `tempUnit` is '°C' (upstream) or '°F'; the simulated defaults follow it.
+const SIMULATED = { '°C': { target: 24, ambient: 27 }, '°F': { target: 75, ambient: 80 } };
+const simulated = (config) => SIMULATED[config.tempUnit] || SIMULATED['°C'];
+
+function defaultAC(cfg, outdoor, sim = SIMULATED['°C']) {
   return {
-    on: false, target: 24, mode: 'cool', fan: 'auto', swing: 'swing',
-    sleep: false, eco: false, roomTemp: Math.min(outdoor - 2, 27),
+    on: false, target: sim.target, mode: 'cool', fan: 'auto', swing: 'swing',
+    sleep: false, eco: false, roomTemp: Math.min(outdoor - 2, sim.ambient),
   };
 }
 
@@ -27,7 +31,7 @@ export function createStore(config, { transmit: send = null, canWrite = null } =
 
   const state = { lights: {}, acs: {}, scene: null };
   for (const l of config.lights) state.lights[l.id] = defaultLight(l);
-  for (const a of config.acs) state.acs[a.id] = defaultAC(a, config.outdoorTemp);
+  for (const a of config.acs) state.acs[a.id] = defaultAC(a, config.outdoorTemp, simulated(config));
   // What each real AC can do, as reported by the native side. A simulated AC can do everything.
   const features = {};
 
@@ -236,7 +240,7 @@ export function createStore(config, { transmit: send = null, canWrite = null } =
     for (const [id, a] of Object.entries(state.acs)) {
       const cfg = acCfg.get(id);
       if (cfg.tuya?.sensorId || cfg.sensor?.id || cfg.link?.id) continue; // a real sensor or unit reports this room
-      const ambient = Math.min(config.outdoorTemp - 2, 27);
+      const ambient = Math.min(config.outdoorTemp - 2, simulated(config).ambient);
       const goal = a.on && a.mode !== 'fan' ? a.target : ambient;
       const step = a.on ? 0.2 : 0.1;
       const next = Math.abs(goal - a.roomTemp) <= step ? goal : a.roomTemp + Math.sign(goal - a.roomTemp) * step;

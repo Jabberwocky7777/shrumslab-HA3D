@@ -182,3 +182,16 @@ test('only administrators get plan editing', async ({ page }) => {
   await page.locator('house-control-card .top .round:not(.power)').click();
   await expect(page.locator('house-control-card .menu button')).toHaveText(['Only an administrator can change this home']);
 });
+
+test('the AC sheet follows Home Assistant\'s temperature unit', async ({ page }, info) => {
+  await open(page, '?unit=F');
+  await page.locator('house-control-card .tile.ac .tile-name').click();
+  await expect(page.locator('house-control-card .sheet .big small')).toHaveText('°F');
+  await expect(page.locator('house-control-card .sheet .sheet-sub')).toContainText('77.9°F');
+  await expect(page.locator('house-control-card .sheet .big .num')).toHaveText('73');
+  await page.screenshot({ path: info.outputPath('ac-fahrenheit.png') });
+  // the slider steps in whole degrees within the entity's range
+  await resetCalls(page);
+  await page.locator('house-control-card .sheet button[aria-label="Warmer"]').click();
+  await expect.poll(() => calls(page)).toContainEqual({ domain: 'climate', service: 'set_temperature', data: { entity_id: 'climate.demo_bedroom_ac', temperature: 74 } });
+});

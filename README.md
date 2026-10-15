@@ -63,6 +63,7 @@ plan:
 # optional
 height: 100%        # CSS height of the card; the default fills the view under the header
 safe_area: false    # true: keep clear of the phone's notch (for a kiosk view without header)
+temperature_unit: F # F or C; the default is Home Assistant's own unit system
 ```
 
 ### Make it the phone app's default

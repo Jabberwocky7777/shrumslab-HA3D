@@ -35,7 +35,8 @@ function acTemperatureColor(target, cfg) {
 //   onScene(scene)        runs a scene instead of store.applyScene (scenes with `run`)
 //   entityTile(cfg)       builds the tile of a plan `entities` item: { el, cfg, kind: 'entity', update }
 //   availability(kind,id) null, or why the device cannot be used right now ('Unavailable', 'Not found')
-export function createPanel(root, config, store, { onFocus, onMenu, onScene = null, entityTile = null, availability = () => null }) {
+//   tempUnit              '°C' (default) or '°F', shown on the AC sheet
+export function createPanel(root, config, store, { onFocus, onMenu, onScene = null, entityTile = null, availability = () => null, tempUnit = '°C' }) {
   const { state } = store;
   const ui = { room: 'all', sheet: null };
   let world = null;
@@ -340,7 +341,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     const set = (patch) => store.setAC(id, patch);
     const sub = h('div.sheet-sub');
     const powerBtn = h('button.round.power', { 'aria-label': 'Power', onclick: () => { haptic('medium'); set({ on: !s().on }); } }, icon('power', 21, 2.2));
-    const big = bigNumber('°C');
+    const big = bigNumber(tempUnit); // ha3d
     const eco = h('button.toggle-chip', { onclick: () => { haptic('light'); set({ eco: !s().eco }); } }, icon('leaf', 17), 'Eco Mode', h('span.switch'));
     const slider = createSlider({
       min: cfg.min, max: cfg.max, value: s().target, gradient: TEMP_GRADIENT,
@@ -402,7 +403,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
         eco.hidden = !f.eco;
         options.style.gridTemplateColumns = `repeat(${shown.filter(([, on]) => on).length || 1}, 1fr)`;
         powerBtn.classList.toggle('on', a.on);
-        sub.replaceChildren(icon('thermo', 14), 'Room ', h('b', `${a.roomTemp.toFixed(1)}°C`),
+        sub.replaceChildren(icon('thermo', 14), 'Room ', h('b', `${a.roomTemp.toFixed(1)}${tempUnit}`), // ha3d
           h('span.live', { style: { background: a.on ? MODE_COLORS[a.mode] : 'rgba(255,255,255,.25)', boxShadow: a.on ? `0 0 8px ${MODE_COLORS[a.mode]}` : 'none' } }));
         big.set(a.target, !a.on);
         slider.set(a.target);

@@ -201,7 +201,8 @@ function buildUi(card, plan, firstHass) {
   let hass = firstHass;
   const getHass = () => hass;
   const root = card._root;
-  const { config, warnings } = validatePlan(plan, { states: hass.states });
+  const unit = temperatureUnit(card._config, hass);
+  const { config, warnings } = validatePlan(plan, { states: hass.states, unit });
   for (const w of warnings) console.warn(`House Control: ${w}`);
 
   const bridge = createHaBridge(config, { getHass, onSettled: () => syncNow(true) });
@@ -235,6 +236,7 @@ function buildUi(card, plan, firstHass) {
     },
     entityTile: (cfg) => entityTile(cfg, { host: card, getHass, onAction }),
     availability: bridge.availability,
+    tempUnit: unit,
   });
 
   world = createWorld(panel.canvas, config, store, {
@@ -358,6 +360,13 @@ function buildUi(card, plan, firstHass) {
       root.replaceChildren();
     },
   };
+}
+
+// `temperature_unit: F` (or C) in the card config, else Home Assistant's own unit system.
+export function temperatureUnit(cardConfig, hass) {
+  const set = String(cardConfig?.temperature_unit || '').toUpperCase().replace('°', '');
+  if (set === 'F' || set === 'C') return `°${set}`;
+  return hass?.config?.unit_system?.temperature === '°F' ? '°F' : '°C';
 }
 
 export function register() {

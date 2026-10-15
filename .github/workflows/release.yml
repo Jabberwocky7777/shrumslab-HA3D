@@ -33,10 +33,14 @@ jobs:
       - run: npm test
       - run: npm run privacy
 
+      # The gitleaks action fails on a branch's first push (it asks git for the root commit's
+      # parent), so the release binary scans the whole history instead.
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.24.3
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks git . --redact --verbose --exit-code 1
 
       - run: npm run build
       - run: npx playwright install --with-deps chromium

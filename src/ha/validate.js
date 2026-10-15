@@ -40,8 +40,11 @@ function checkAction(what, entity, action, path) {
  * with an `entities` array added. Throws a ConfigError for anything that would break the card
  * or the sensitive-device rules. Missing entities (not in `hass.states`) are only warnings.
  */
-export function validatePlan(raw, { states = null } = {}) {
+export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
   const config = normalize(structuredClone(raw));
+  // Temperatures in the plan (AC ranges, scene targets, outdoorTemp) are in Home Assistant's unit.
+  config.tempUnit = unit === '°F' ? '°F' : '°C';
+  if (config.tempUnit === '°F' && raw.outdoorTemp == null) config.outdoorTemp = 80;
   const warnings = [];
   const ids = new Set([...config.rooms, ...config.lights, ...config.acs].map((x) => x.id));
   const roomIds = new Set(config.rooms.map((r) => r.id));
@@ -67,6 +70,7 @@ export function validatePlan(raw, { states = null } = {}) {
   config.acs.forEach((a, i) => {
     const rawAc = raw.acs[i];
     a.autoRange = !('min' in rawAc) && !('max' in rawAc);
+    if (a.autoRange && config.tempUnit === '°F') { a.min = 60; a.max = 86; }
     const entity = haLink(a);
     if (a.link && !entity) warnings.push(`AC "${a.id}" is linked to ${a.link.service}, which this card cannot reach`);
     if (entity) {

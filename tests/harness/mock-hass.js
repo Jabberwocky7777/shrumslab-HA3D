@@ -39,12 +39,17 @@ export function demoStates() {
   ]);
 }
 
-export function createMockHass({ admin = true, states = demoStates(), dashboard = null } = {}) {
+export function createMockHass({ admin = true, states = demoStates(), dashboard = null, fahrenheit = false } = {}) {
+  if (fahrenheit) {
+    Object.assign(states['climate.demo_bedroom_ac'].attributes, { temperature: 73, current_temperature: 77.9, min_temp: 60, max_temp: 86 });
+    Object.assign(states['climate.demo_thermostat'].attributes, { temperature: 72, current_temperature: 70.5 });
+  }
   const calls = [];
   const ws = [];
   const hass = {
     states,
     user: { name: 'Demo', is_admin: admin },
+    config: { unit_system: { temperature: fahrenheit ? '°F' : '°C' } },
     panelUrl: 'lovelace',
     language: 'en',
     calls,

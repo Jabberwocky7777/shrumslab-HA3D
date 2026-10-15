@@ -79,3 +79,15 @@ test('lights without capabilities are flagged for capabilities from Home Assista
   assert.equal(config.lights.find((l) => l.id === 'kitchen.spots').autoCapabilities, false);
   assert.equal(config.lights.find((l) => l.id === 'living.main').autoCapabilities, true);
 });
+
+test('in Fahrenheit, unset AC ranges and outdoorTemp get Fahrenheit defaults', () => {
+  const p = structuredClone(demo);
+  p.acs.push({ id: 'living.ac', name: 'Living AC', room: 'living', wall: 'west', pos: [0, 4.4] });
+  const { config } = validatePlan(p, { unit: '°F' });
+  const ac = config.acs.find((a) => a.id === 'living.ac');
+  assert.equal(config.tempUnit, '°F');
+  assert.deepEqual([ac.min, ac.max], [60, 86]);
+  assert.equal(config.outdoorTemp, 24, 'the demo sets outdoorTemp itself');
+  const celsius = validatePlan(p).config;
+  assert.deepEqual([celsius.acs.at(-1).min, celsius.acs.at(-1).max], [16, 30]);
+});
