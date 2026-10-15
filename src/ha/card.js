@@ -370,6 +370,9 @@ export function temperatureUnit(cardConfig, hass) {
 }
 
 export function register() {
+  // eslint-disable-next-line no-undef -- replaced by Vite at build time
+  const version = typeof __CARD_VERSION__ === 'string' ? __CARD_VERSION__ : 'dev';
+  console.info(`%c HOUSE-CONTROL-CARD %c ${version} `, 'color:#fff;background:#41bdf5', 'color:#41bdf5');
   if (!customElements.get('house-control-card')) customElements.define('house-control-card', HouseControlCard);
   window.customCards = window.customCards || [];
   if (!window.customCards.some((c) => c.type === 'house-control-card')) {

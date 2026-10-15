@@ -1,7 +1,8 @@
 name: Release
 
-# A tag v* builds the card, runs every check and attaches the bundle to a DRAFT release.
-# Publishing the release (which is what HACS installs) is done by hand after review.
+# A tag v* builds the card, runs every check and publishes a release with the bundle attached.
+# HACS ignores draft releases, and a release published before its asset is uploaded can be cached
+# by HACS without the file, so the release is created only once everything has passed.
 on:
   push:
     tags: ['v*']
@@ -46,9 +47,15 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:render
 
-      - name: Draft release
+      - name: Bundle exists
+        run: test -s dist/shrumslab-ha3d.js
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: dist/shrumslab-ha3d.js

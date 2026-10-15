@@ -1,5 +1,8 @@
 # House Control 3D for Home Assistant
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![Release](https://img.shields.io/github/v/release/Jabberwocky7777/shrumslab-HA3D)](https://github.com/Jabberwocky7777/shrumslab-HA3D/releases/latest)
+
 A Lovelace card that shows your home as a 3D model: lights that glow when they're on, scene
 buttons, room filters and light tiles you tap to toggle and drag to dim. It is the web UI of
 [house-control](https://github.com/0xProbabillity/house-control) (iPhone layout), with its native
@@ -7,8 +10,8 @@ device bridge replaced by Home Assistant. It's made to be the main dashboard in 
 phone app.
 
 <p align="center">
-  <img src="docs/images/demo.png" width="320" alt="The demo house in the card">
-  <img src="docs/images/editor.png" width="320" alt="The plan editor">
+  <img src="https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/demo.png" width="320" alt="The demo house in the card">
+  <img src="https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/editor.png" width="320" alt="The plan editor">
 </p>
 
 - **3D model** from a simple floor plan (rooms, doors, windows, furniture), lit by your real lights.
@@ -76,7 +79,7 @@ notch.
 ## The plan
 
 The plan format is house-control's, with Home Assistant links and a new `entities` section. See
-**[docs/plan-format.md](docs/plan-format.md)**. In short:
+**[docs/plan-format.md](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md)**. In short:
 
 - `rooms` are rectangles in metres (`x` grows east, `z` grows south), with `oak`, `walnut`,
   `tile`, `stone` or `carpet` floors. `openings` are doors and windows, `furniture` is decoration:
@@ -159,7 +162,7 @@ npm run check      # lint, privacy check, unit tests, build, headless render tes
 ```
 
 - `upstream/`: house-control's `web/src`, changed as little as possible. Every change is marked
-  `ha3d:`; [upstream/UPSTREAM.md](upstream/UPSTREAM.md) lists them and explains how to take in
+  `ha3d:`; [upstream/UPSTREAM.md](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/upstream/UPSTREAM.md) lists them and explains how to take in
   upstream updates.
 - `src/ha/`: everything Home Assistant: the card element, the bridge (`hass` ↔ store), state
   mapping, sensitive-device rules, plan validation and storage, entity markers and the editor host.
@@ -168,11 +171,13 @@ npm run check      # lint, privacy check, unit tests, build, headless render tes
   live updates, locks open more-info, bulk actions skip sensitive devices, the editor saves, and no
   request leaves the page.
 
-Releases: push a tag `vX.Y.Z` matching `package.json`; the workflow runs every check and attaches the
-bundle to a **draft** release, to be reviewed and published by hand.
+Releases: bump `version` in `package.json`, commit, then push a tag `vX.Y.Z` that matches it. The
+Release workflow runs every check, builds the bundle and publishes a GitHub release with
+`shrumslab-ha3d.js` attached. HACS only offers published (non-draft) releases that carry that file,
+so a commit on `main` without a tag never shows up as an update.
 
 ## Credits and licence
 
 Based on [house-control](https://github.com/0xProbabillity/house-control) by 0xProbability, MIT
-licence. Its `LICENSE` is kept as is; see [NOTICE](NOTICE). This project's own code is MIT too.
+licence. Its `LICENSE` is kept as is; see [NOTICE](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/NOTICE). This project's own code is MIT too.
 Bundles [three.js](https://threejs.org) (MIT) and [Lucide](https://lucide.dev) icons (ISC).
