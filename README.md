@@ -1,38 +1,42 @@
-# House Control 3D for Home Assistant
+# House Control 3D
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
-[![Release](https://img.shields.io/github/v/release/Jabberwocky7777/shrumslab-HA3D)](https://github.com/Jabberwocky7777/shrumslab-HA3D/releases/latest)
+[![HACS Custom][hacs-badge]][hacs-url] [![Release][release-badge]][release-url] [![Downloads][downloads-badge]][release-url] [![Home Assistant][ha-badge]][ha-url] [![CI][ci-badge]][ci-url] [![License][license-badge]](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/LICENSE)
 
-A Lovelace card that shows your home as a 3D model: lights that glow when they're on, scene
-buttons, room filters and light tiles you tap to toggle and drag to dim. It is the web UI of
+![House Control 3D: the card and its plan editor](https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/hero.png)
+
+**Your home as a live 3D model, right in your Home Assistant dashboard.** Lights glow when they're
+on, and you tap to toggle and drag to dim. It is the web UI of
 [house-control](https://github.com/0xProbabillity/house-control) (iPhone layout), with its native
-device bridge replaced by Home Assistant. It's made to be the main dashboard in the Home Assistant
-phone app.
+device bridge replaced by Home Assistant, and it's made to be the main dashboard in the Home
+Assistant phone app.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/demo.png" width="320" alt="The demo house in the card">
-  <img src="https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/editor.png" width="320" alt="The plan editor">
-</p>
+## ✨ Features
 
-- **3D model** from a simple floor plan (rooms, doors, windows, furniture), lit by your real lights.
-- **Lights**: tap to toggle, drag sideways to dim, touch and hold for brightness, white and colour.
+- 🏠 **3D model** from a simple floor plan (rooms, doors, windows, furniture), lit by your real lights.
+- 💡 **Lights**: tap to toggle, drag sideways to dim, touch and hold for brightness, white and colour.
   State updates live from Home Assistant (wall switches, automations, other dashboards).
-- **Other devices** (TV, thermostat, fan, lock, garage door, camera...) as glowing icons and tiles
+- 📺 **Other devices** (TV, thermostat, fan, lock, garage door, camera...) as glowing icons and tiles
   that open Home Assistant's own dialogs.
-- **Scenes**: house-control's light scenes, or buttons that run a Home Assistant script or scene.
-- **Visual editor** for admins, saved straight into the dashboard. Import and export as a file.
-- **Private by design**: the plan never goes in `/config/www`, nothing is loaded from the internet,
+- 🎬 **Scenes**: house-control's light scenes, or buttons that run a Home Assistant script or scene.
+- ✏️ **Visual editor** for admins, saved straight into the dashboard. Import and export as a file.
+- 🔒 **Private by design**: the plan never goes in `/config/www`, nothing is loaded from the internet,
   no tokens. See [Privacy](#privacy).
 
 ## Install
 
 ### HACS (recommended)
 
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Jabberwocky7777/shrumslab-HA3D`,
-   type **Dashboard**.
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Jabberwocky7777&repository=shrumslab-HA3D&category=plugin)
+
+Click the button above, or by hand:
+
+1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Jabberwocky7777/shrumslab-HA3D`, type **Dashboard**.
 2. Find **House Control 3D** in HACS and download it. HACS adds the dashboard resource
    (under `/hacsfiles/`) for you.
 3. Reload the browser (or restart the app).
+
+New versions show up in HACS as an update; the card's version is logged in the browser console
+(`HOUSE-CONTROL-CARD x.y.z`).
 
 ### By hand
 
@@ -63,11 +67,16 @@ plan:
       type: ceiling
       pos: [3, 2.2]
       link: { service: homeassistant, id: light.your_light }
-# optional
-height: 100%        # CSS height of the card; the default fills the view under the header
-safe_area: false    # true: keep clear of the phone's notch (for a kiosk view without header)
-temperature_unit: F # F or C; the default is Home Assistant's own unit system
 ```
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `plan` | the demo house | The floor plan: rooms, lights, devices and scenes. See [the plan](#the-plan). |
+| `height` | fills the view | CSS height of the card, e.g. `100%` or `800px`. |
+| `safe_area` | `false` | `true` keeps clear of the phone's notch, for a kiosk view without a header. |
+| `temperature_unit` | Home Assistant's | `F` or `C`. |
 
 ### Make it the phone app's default
 
@@ -181,3 +190,14 @@ so a commit on `main` without a tag never shows up as an update.
 Based on [house-control](https://github.com/0xProbabillity/house-control) by 0xProbability, MIT
 licence. Its `LICENSE` is kept as is; see [NOTICE](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/NOTICE). This project's own code is MIT too.
 Bundles [three.js](https://threejs.org) (MIT) and [Lucide](https://lucide.dev) icons (ISC).
+
+[hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[hacs-url]: https://hacs.xyz/docs/faq/custom_repositories/
+[release-badge]: https://img.shields.io/github/v/release/Jabberwocky7777/shrumslab-HA3D
+[release-url]: https://github.com/Jabberwocky7777/shrumslab-HA3D/releases/latest
+[downloads-badge]: https://img.shields.io/github/downloads/Jabberwocky7777/shrumslab-HA3D/total
+[ha-badge]: https://img.shields.io/badge/Home%20Assistant-2024.11%2B-41BDF5.svg
+[ha-url]: https://www.home-assistant.io/
+[ci-badge]: https://github.com/Jabberwocky7777/shrumslab-HA3D/actions/workflows/ci.yml/badge.svg
+[ci-url]: https://github.com/Jabberwocky7777/shrumslab-HA3D/actions/workflows/ci.yml
+[license-badge]: https://img.shields.io/github/license/Jabberwocky7777/shrumslab-HA3D

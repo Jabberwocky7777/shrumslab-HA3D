@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in the card doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Please don't paste your real plan, entity ids, URLs or screenshots
+        of your own home.** Reproduce with the demo house or a trimmed plan with made-up names.
+  - type: input
+    id: version
+    attributes:
+      label: Card version
+      description: Shown in the browser console as `HOUSE-CONTROL-CARD x.y.z`, or in HACS.
+      placeholder: 0.2.1
+    validations:
+      required: true
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      placeholder: 2026.10.0
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Where does it happen?
+      multiple: true
+      options:
+        - Home Assistant iOS app
+        - Home Assistant Android app
+        - Desktop browser
+        - Mobile browser
+        - Visual editor
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add the card with the demo plan
+        2. Tap ...
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console errors
+      description: Anything red in the console (redact hostnames and entity ids).
+      render: text

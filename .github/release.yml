@@ -1,0 +1,14 @@
+# Sections for the notes GitHub generates on each release, by pull request label.
+changelog:
+  exclude:
+    labels: [skip-changelog]
+    authors: [dependabot]
+  categories:
+    - title: ✨ New
+      labels: [enhancement, feature]
+    - title: 🐛 Fixes
+      labels: [bug, fix]
+    - title: 📝 Docs
+      labels: [documentation]
+    - title: Other changes
+      labels: ['*']

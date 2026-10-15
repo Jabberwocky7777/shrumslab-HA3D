@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Plan format reference
+    url: https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md
+    about: Rooms, lights, devices and scenes, with every option.
+  - name: Home Assistant community forum
+    url: https://community.home-assistant.io/
+    about: General Home Assistant and dashboard questions.
