@@ -1,0 +1,375 @@
+// <house-control-card>: house-control's iPhone UI as a Lovelace card (brief section 3.2).
+// The plan comes only from the card's config; devices are reached only through `hass`.
+import { createStore } from '../../upstream/store.js';
+import { createWorld } from '../../upstream/three/world.js';
+import { createPanel } from '../../upstream/ui/panel.js';
+import { h, openMenu } from '../../upstream/ui/dom.js';
+import { icon } from '../../upstream/ui/icons.js';
+import { haptic } from '../../upstream/bridge.js';
+import { cardStyles } from './styles.js';
+import { validatePlan, haLink } from './validate.js';
+import { createHaBridge } from './bridge.js';
+import { EntityMarker } from './markers.js';
+import { entityTile, runAction, lookOf, labelOf } from './entities.js';
+import { domainOf, RUN_DOMAINS } from './sensitive.js';
+import { savePlan, exportPlan, pickPlanFile, diffPlans, deepEqual, SaveFallback } from './plan-store.js';
+import { openEditor } from './editor-dialog.js';
+import demoPlan from '../../plans/demo.json';
+
+const TEARDOWN_DELAY = 400; // a card moved around the DOM is disconnected and connected again at once
+
+export class HouseControlCard extends HTMLElement {
+  static getStubConfig() {
+    return { plan: structuredClone(demoPlan) };
+  }
+
+  constructor() {
+    super();
+    this._shadow = this.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = cardStyles();
+    this._root = h('div.hc-root.ios');
+    this._shadow.append(style, this._root);
+    this._config = null;
+    this._hass = null;
+    this._ui = null;
+    this._editor = null;
+    this._teardown = 0;
+  }
+
+  setConfig(config) {
+    if (!config || typeof config !== 'object') throw new Error('Invalid configuration');
+    if (!config.plan || typeof config.plan !== 'object') {
+      throw new Error('This card needs a "plan:". Start from the demo plan in the README, or add the card from the card picker.');
+    }
+    validatePlan(config.plan); // throws a ConfigError with a readable message: Home Assistant shows it
+    if (this._config && deepEqual(config, this._config)) return;
+    this._config = config;
+    if (config.height) this.style.setProperty('--hc-height', String(config.height));
+    else this.style.removeProperty('--hc-height');
+    this.toggleAttribute('safe-area', Boolean(config.safe_area));
+    this._rebuild();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._ui) this._ui.update(hass);
+    else this._build();
+  }
+
+  get hass() { return this._hass; }
+
+  getCardSize() { return 12; }
+
+  getGridOptions() { return { columns: 'full', min_columns: 6, rows: 10, min_rows: 6 }; }
+
+  connectedCallback() {
+    clearTimeout(this._teardown);
+    if (this._ui) this._ui.setVisible(true);
+    else this._build();
+  }
+
+  disconnectedCallback() {
+    this._ui?.setVisible(false);
+    clearTimeout(this._teardown);
+    this._teardown = setTimeout(() => {
+      if (this.isConnected) return;
+      this._editor?.close();
+      this._destroy();
+    }, TEARDOWN_DELAY);
+  }
+
+  _rebuild() {
+    this._destroy();
+    this._build();
+  }
+
+  _destroy() {
+    this._ui?.dispose();
+    this._ui = null;
+  }
+
+  _build() {
+    if (this._ui || !this._config || !this._hass || !this.isConnected) return;
+    try {
+      this._ui = buildUi(this, this._config.plan, this._hass);
+    } catch (error) {
+      console.error(error);
+      this._root.replaceChildren(h('div.fatal', h('h1', 'House Control could not start'),
+        'The floor plan could not be shown.', h('code', String(error?.message || error))));
+    }
+  }
+
+  /* ---------- plan management (admins) ---------- */
+
+  _menu(anchor, anchorHost) {
+    const admin = Boolean(this._hass?.user?.is_admin);
+    const items = admin
+      ? [
+        { label: 'Edit home…', icon: icon('home', 16), action: () => this._openEditor() },
+        { label: 'Import plan…', icon: icon('upload', 16), action: () => this._import() },
+        { label: 'Export plan', icon: icon('download', 16), action: () => exportPlan(this._config.plan) },
+      ]
+      : [{ label: 'Only an administrator can change this home', action: () => {} }];
+    openMenu(anchorHost, anchor, items);
+  }
+
+  async _openEditor() {
+    if (this._editor) return;
+    this._ui?.setVisible(false);
+    try {
+      this._editor = await openEditor(this._shadow, {
+        plan: structuredClone(this._config.plan),
+        getHass: () => this._hass,
+        getCardConfig: () => this._config,
+        onSaved: (plan) => this._adopt(plan),
+        onClosed: () => { this._editor = null; this._ui?.setVisible(this.isConnected); },
+      });
+    } catch (e) {
+      this._editor = null;
+      this._ui?.setVisible(true);
+      this._ui?.toast(`The editor could not start: ${e.message}`);
+    }
+  }
+
+  // The plan was saved into the dashboard: show it now, without waiting for Home Assistant to
+  // push the new dashboard config (which then compares equal and changes nothing).
+  _adopt(plan) {
+    this._config = { ...this._config, plan };
+    this._rebuild();
+    if (this._editor) this._ui?.setVisible(false); // still behind the editor
+  }
+
+  async _import() {
+    let json;
+    try {
+      json = await pickPlanFile();
+    } catch (e) { this._dialog('Import failed', [h('p.bad', e.message)]); return; }
+    if (!json) return;
+    let result;
+    try {
+      result = validatePlan(json, { states: this._hass.states });
+    } catch (e) {
+      this._dialog('This is not a valid plan', [h('p.bad', e.message)]);
+      return;
+    }
+    const diff = diffPlans(this._config.plan, json);
+    const lines = [];
+    const LABEL = { rooms: 'Rooms', lights: 'Lights', acs: 'Air conditioners', entities: 'Other devices', scenes: 'Scenes' };
+    for (const [key, d] of Object.entries(diff)) {
+      const parts = [];
+      if (d.added.length) parts.push(`${d.added.length} added (${d.added.join(', ')})`);
+      if (d.removed.length) parts.push(`${d.removed.length} removed (${d.removed.join(', ')})`);
+      if (d.changed.length) parts.push(`${d.changed.length} changed`);
+      if (parts.length) lines.push(h('li', h('b', `${LABEL[key]}: `), parts.join(' · ')));
+    }
+    const body = [
+      h('p', `“${json.name || 'Home'}” will replace “${this._config.plan.name || 'Home'}” in this card.`),
+      lines.length ? h('ul', lines) : h('p', 'Nothing changes.'),
+      result.warnings.length ? h('ul.warn', result.warnings.map((w) => h('li', w))) : null,
+    ];
+    this._dialog('Import plan', body, {
+      confirm: 'Save',
+      onConfirm: async () => {
+        try {
+          await savePlan(this._hass, this._config, json);
+          this._adopt(json);
+          this._ui?.toast('Plan imported');
+        } catch (e) {
+          const msg = e instanceof SaveFallback ? `${e.message} Paste the file's contents under "plan:" in the card's YAML instead.` : e.message;
+          this._dialog('Could not save', [h('p.bad', msg)]);
+        }
+      },
+    });
+  }
+
+  _dialog(title, body, { confirm = null, onConfirm = null } = {}) {
+    const close = () => scrim.remove();
+    const scrim = h('div.hc-dialog-scrim', { onclick: (ev) => { if (ev.target === scrim) close(); } },
+      h('div.hc-dialog', { role: 'dialog', 'aria-label': title },
+        h('h2', title), body,
+        h('div.hc-dialog-actions',
+          h('button', { onclick: close }, confirm ? 'Cancel' : 'OK'),
+          confirm ? h('button.primary', { onclick: () => { close(); onConfirm(); } }, confirm) : null)));
+    this._root.append(scrim);
+  }
+}
+
+/* ---------- the live UI of one card ---------- */
+
+function buildUi(card, plan, firstHass) {
+  let hass = firstHass;
+  const getHass = () => hass;
+  const root = card._root;
+  const { config, warnings } = validatePlan(plan, { states: hass.states });
+  for (const w of warnings) console.warn(`House Control: ${w}`);
+
+  const bridge = createHaBridge(config, { getHass, onSettled: () => syncNow(true) });
+  bridge.applyCapabilities(hass);
+  const builtShape = bridge.shape();
+  const store = createStore(config, { transmit: bridge.transmit, canWrite: bridge.canWrite });
+  const linked = [...config.lights, ...config.acs].some((d) => haLink(d) || d.link || d.tuya);
+  // A plan without any real device (the demo, before linking) starts with something to look at.
+  if (!linked) {
+    const first = config.scenes.find((s) => s.id === 'cozy' && !s.run) || config.scenes.find((s) => !s.run);
+    if (first) store.applyScene(first.id);
+  }
+
+  const markers = new Map(config.entities.map((e) => [e.id, new EntityMarker(e)]));
+  const entityCfg = new Map(config.entities.map((e) => [e.id, e]));
+  const nameOf = (id) => store.lightCfg.get(id)?.name || store.acCfg.get(id)?.name || entityCfg.get(id)?.name || id;
+  let panel = null;
+  let world = null;
+  const toast = (text) => panel?.toast(text);
+  const onAction = (result, error) => { if (error) toast(error.message || String(error)); };
+
+  panel = createPanel(root, config, store, {
+    onFocus: (target) => world?.focus(target),
+    onMenu: (anchor, reason) => { if (reason !== 'escape' && anchor) card._menu(anchor, panel.anchorMenu); },
+    onScene(scene) {
+      if (!scene.run) { store.applyScene(scene.id); return; }
+      const domain = domainOf(scene.run);
+      if (!RUN_DOMAINS.has(domain)) return; // validation already refuses anything else
+      hass.callService(domain, 'turn_on', { entity_id: scene.run })
+        .then(() => toast(`${scene.name} started`), (e) => { haptic('error'); toast(`${scene.name}: ${e.message}`); });
+    },
+    entityTile: (cfg) => entityTile(cfg, { host: card, getHass, onAction }),
+    availability: bridge.availability,
+  });
+
+  world = createWorld(panel.canvas, config, store, {
+    onHover: panel.showTooltip,
+    entities: markers,
+    onPick(target) {
+      if (!target) return;
+      if (target.kind === 'light') {
+        const missing = bridge.availability('light', target.id);
+        if (missing) { toast(`${nameOf(target.id)}: ${missing}`); return; }
+        haptic('light');
+        store.toggleLight(target.id);
+      } else if (target.kind === 'ac') {
+        const missing = bridge.availability('ac', target.id);
+        if (missing) toast(`${nameOf(target.id)}: ${missing}`);
+        else panel.openSheet(target);
+      } else if (target.kind === 'room') {
+        panel.selectRoom(target.id);
+      } else if (target.kind === 'entity') {
+        markers.get(target.id)?.bump();
+        Promise.resolve(runAction(card, hass, entityCfg.get(target.id), 'tap')).then(onAction, (e) => onAction(null, e));
+      }
+    },
+  });
+  panel.attach(world);
+
+  store.onDeviceError = (id, message) => {
+    toast(`${nameOf(id)}: ${message}`);
+    haptic('error');
+  };
+
+  // Upstream's phone layout: the header sits over the model, the panel overlaps its bottom.
+  const safeTop = () => {
+    const probe = root.appendChild(h('div', { style: { position: 'absolute', paddingTop: 'var(--safe-top-preview, 0px)' } }));
+    const top = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+    probe.remove();
+    return top;
+  };
+  const applyInsets = () => world.setInsets(50 + safeTop(), 36);
+  applyInsets();
+  const resizer = new ResizeObserver(() => applyInsets());
+  resizer.observe(panel.canvas);
+
+  // Swiping in from the left edge goes back from a device sheet, as everywhere on iOS.
+  const listeners = new AbortController();
+  const opts = { capture: true, signal: listeners.signal };
+  let edge = null;
+  root.addEventListener('pointerdown', (ev) => {
+    const left = root.getBoundingClientRect().left;
+    edge = ev.clientX - left < 28 ? { x: ev.clientX, y: ev.clientY } : null;
+  }, opts);
+  root.addEventListener('pointerup', (ev) => {
+    const swiped = edge && ev.clientX - edge.x > 56 && Math.abs(ev.clientY - edge.y) < 80;
+    edge = null;
+    if (swiped && panel.closeSheet()) haptic('light');
+  }, opts);
+  root.addEventListener('pointercancel', () => { edge = null; }, opts);
+
+  /* ---------- Home Assistant state ---------- */
+
+  const seenEntities = new Map();
+  function syncEntities(force) {
+    let any = false;
+    for (const [id, unit] of markers) {
+      const cfg = entityCfg.get(id);
+      const st = hass.states[cfg.entity];
+      if (!force && seenEntities.get(id) === st) continue;
+      seenEntities.set(id, st);
+      unit.apply(lookOf(cfg, st), labelOf(cfg, st));
+      any = true;
+    }
+    return any;
+  }
+
+  function syncNow(force = false) {
+    const devices = bridge.sync(hass, store, { force });
+    const entities = syncEntities(force);
+    if (devices || entities) { panel.refresh(); world.wake(); }
+  }
+  syncNow(true);
+
+  /* ---------- visibility ---------- */
+
+  let visible = true;
+  let onScreen = true;
+  let started = false;
+  const running = () => visible && onScreen && !document.hidden;
+  function applyRunning() {
+    const on = running();
+    world.setRunning(on);
+    if (on && !started) { started = true; world.intro(); }
+  }
+  const io = new IntersectionObserver((entries) => {
+    onScreen = entries.some((e) => e.isIntersecting);
+    applyRunning();
+  });
+  io.observe(card);
+  document.addEventListener('visibilitychange', applyRunning, { signal: listeners.signal });
+  applyRunning();
+
+  return {
+    update(next) {
+      hass = next;
+      bridge.applyCapabilities(hass);
+      // What a light can do decides how its tile is built: rebuild when Home Assistant changes it.
+      if (bridge.shape() !== builtShape) { queueMicrotask(() => card._rebuild()); return; }
+      syncNow();
+    },
+    setVisible(on) { visible = on; applyRunning(); },
+    toast,
+    // for the render test and the browser console
+    get debug() { return { store, world, config, markers }; },
+    dispose() {
+      listeners.abort();
+      io.disconnect();
+      resizer.disconnect();
+      bridge.dispose();
+      panel.dispose();
+      world.dispose();
+      store.dispose();
+      root.replaceChildren();
+    },
+  };
+}
+
+export function register() {
+  if (!customElements.get('house-control-card')) customElements.define('house-control-card', HouseControlCard);
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((c) => c.type === 'house-control-card')) {
+    window.customCards.push({
+      type: 'house-control-card',
+      name: 'House Control 3D',
+      description: 'A 3D model of your home with glowing lights, scenes and room controls (based on house-control).',
+      preview: true,
+      documentationURL: 'https://github.com/Jabberwocky7777/shrumslab-HA3D',
+    });
+  }
+}

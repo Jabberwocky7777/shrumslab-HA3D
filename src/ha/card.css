@@ -1,0 +1,83 @@
+/* The card's own styles, on top of upstream's (scoped by styles.js). */
+
+:host {
+  display: block;
+  position: relative;
+  /* A panel view gives the card the whole view; `height:` in the card config overrides this. */
+  height: var(--hc-height, calc(100dvh - var(--header-height, 56px)));
+  min-height: 420px;
+  overflow: hidden;
+  /* Home Assistant's own header and the app take care of the phone's safe areas. */
+  --safe-top-preview: 0px;
+  --safe-bottom-preview: 0px;
+}
+:host([safe-area]) {
+  --safe-top-preview: env(safe-area-inset-top, 0px);
+  --safe-bottom-preview: env(safe-area-inset-bottom, 0px);
+}
+
+.hc-root { position: relative; height: 100%; background: var(--bg); }
+.hc-root.ios .card { height: 100%; }
+
+/* ---------- devices that cannot be used right now ---------- */
+
+.tile.unavailable { opacity: 0.45; cursor: default; }
+.tile.unavailable .bubble { color: var(--faint); }
+
+/* ---------- plan entities (TV, thermostat, lock...) ---------- */
+
+.tile.entity { cursor: pointer; }
+.tile.entity.on .bubble { color: #1a1206; }
+.tile.entity.alert { border-color: color-mix(in srgb, var(--c) 60%, transparent); }
+.tile.entity.bump { transform: scale(0.97); }
+
+/* ---------- dialogs of the card (import, messages) ---------- */
+
+.hc-dialog-scrim {
+  position: absolute; inset: 0; z-index: 30;
+  display: grid; place-items: center; padding: 18px;
+  background: rgba(4, 6, 12, 0.6);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.hc-dialog {
+  width: min(420px, 100%); max-height: 100%; overflow: auto;
+  padding: 20px; border-radius: 24px;
+  background: rgba(18, 22, 34, 0.96); border: 1px solid var(--line);
+  box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.7);
+  font-size: 14px; line-height: 1.45; color: var(--muted);
+  user-select: text; -webkit-user-select: text;
+}
+.hc-dialog h2 { margin: 0 0 10px; font-size: 17px; color: var(--text); }
+.hc-dialog ul { margin: 8px 0 0; padding-left: 18px; }
+.hc-dialog li { margin: 2px 0; }
+.hc-dialog b { color: var(--text); font-weight: 600; }
+.hc-dialog .warn { color: #ffd2a8; }
+.hc-dialog .bad { color: #ffb4a8; }
+.hc-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.hc-dialog-actions button {
+  height: 40px; padding: 0 16px; border-radius: 14px; font-weight: 650;
+  background: var(--glass-hi); color: var(--text);
+}
+.hc-dialog-actions button.primary { background: linear-gradient(180deg, #4f97ff, #2f7bf2); color: #fff; }
+
+/* ---------- the plan editor, full screen over the dashboard ---------- */
+
+.hc-editor-layer {
+  position: fixed; inset: 0; z-index: 9;
+  --safe-top-preview: env(safe-area-inset-top, 0px);
+  --safe-bottom-preview: env(safe-area-inset-bottom, 0px);
+}
+.hc-editor-layer .toast { position: fixed; }
+
+/* plan entities on the editor's plan */
+.p-entity { cursor: move; }
+.p-entity rect { fill: #8fb8ff; stroke: #0a0e1a; stroke-width: 0.04; }
+.p-entity.linked rect { stroke: #6ee7a0; stroke-width: 0.06; }
+.p-entity.sel rect { stroke: #fff; stroke-width: 0.08; }
+.p-entity .hit { fill: transparent; stroke: none; }
+.editor.phone .p-entity { cursor: default; }
+
+.fatal { margin: 16px; }
+
+/* the editor's toolbar has one more tool here (Export) */
+.p-tools { grid-template-columns: repeat(5, 1fr); }
