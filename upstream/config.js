@@ -57,7 +57,7 @@ export function normalize(raw) {
       `Room "${r.id}" needs "rect": [x, z, width, depth]`);
     const [x, z, w, d] = r.rect;
     need(w > 0 && d > 0, `Room "${r.id}" has an empty rect`);
-    return { id: r.id, name: r.name || r.id, x, z, w, d, floor: r.floor || 'oak' };
+    return { id: r.id, name: r.name || r.id, x, z, w, d, floor: r.floor || 'oak', tab: r.tab ?? null }; // ha3d: tab
   });
   const roomIds = new Set(rooms.map((r) => r.id));
 

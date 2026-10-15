@@ -23,7 +23,7 @@ shows the full patch.
 | `bridge.js` | No `window.webkit.messageHandlers`. Always the iPhone layout. `post()` is a no-op; `haptic()` fires Home Assistant's `haptic` event. |
 | `config.js` | No `fetch()` of `./plans/<name>.json`: the plan only comes from the card config. Scenes keep `run`. |
 | `store.js` | No `localStorage` state. `transmit` and `canWrite` are injected (Home Assistant). `dispose()` stops the simulation timer. |
-| `ui/panel.js` | No AI Access badge. Hooks for scenes with `run`, entity tiles and unavailable devices. `dispose()` removes its window listener. |
+| `ui/panel.js` | Room tabs only for rooms with a light, AC or entity, or with `"tab": true` (`config.js` keeps `tab`). No AI Access badge. Hooks for scenes with `run`, entity tiles and unavailable devices. `dispose()` removes its window listener. |
 | `ui/dom.js` | `openMenu` uses `composedPath()`, so outside clicks work inside a shadow root. |
 | `ui/icons.js` | More icons (lock, garage, speaker...) and `iconNode()` for drawing icons on a canvas. |
 | `three/world.js` | Extra `entities` units (picked and animated like lamps), `wake()`, and `dispose()` frees geometries, materials and textures too. |

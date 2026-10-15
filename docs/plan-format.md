@@ -37,9 +37,21 @@ the south wall.
 
 | Section | Fields |
 | --- | --- |
-| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (`oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. |
+| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (`oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. Optional `tab` (see below). |
 | `openings` | `type` (`door`, `window`, `open`), `from: [x, z]`, `to: [x, z]` on one wall line (same x or same z), windows also `sill`, `head` |
 | `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet`, and the extra models below |
+
+### Room tabs
+
+The room filter above the tiles only gets a tab for a room that has at least one light, AC or
+entity in it. A hallway or closet with only furniture still appears in the 3D model, just without a
+tab. To decide yourself, give the room `"tab": true` (always a tab, even when empty) or
+`"tab": false` (never a tab; its devices still show under **All**). Anything other than `true` or
+`false` is refused.
+
+```json
+{ "id": "storage", "name": "Storage", "rect": [8.0, 8.2, 2.4, 2.0], "floor": "stone", "tab": true }
+```
 
 ### Extra furniture
 

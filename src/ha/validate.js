@@ -42,6 +42,7 @@ function checkAction(what, entity, action, path) {
  */
 export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
   const config = normalize(structuredClone(raw));
+  raw.rooms.forEach((r) => need(r.tab == null || typeof r.tab === 'boolean', `Room "${r.id}" has a "tab" that is not true or false`));
   // Temperatures in the plan (AC ranges, scene targets, outdoorTemp) are in Home Assistant's unit.
   config.tempUnit = unit === '°F' ? '°F' : '°C';
   if (config.tempUnit === '°F' && raw.outdoorTemp == null) config.outdoorTemp = 80;

@@ -84,6 +84,8 @@ The plan format is house-control's, with Home Assistant links and a new `entitie
   `sectional`, `glassCabinet`, `darkBookcase`, `mediaWall`, `wetBar`, `barCart`, `pokerTable`,
   `popcornMachine`, `treadmill`, `deskSetup`, `endTable`, `pedestalSink`, `tubOnly`, `tubShower`,
   `stairs`, `catTree`, `litterRobot`, `dehumidifier`, `airPurifier`.
+- A room gets a tab in the room filter only when a light, AC or entity is in it. Set `tab: true`
+  or `tab: false` on a room to force a tab on or off; tab-less rooms still show in 3D.
 - Light fixtures: `ceiling`, `pendant`, `spots`, `floor`, `table`, `strip`, plus `fan`,
   `pendantBar`, `dome`, and `cans` and `sconce`, which take a `points` list for several
   fixtures on one switch.

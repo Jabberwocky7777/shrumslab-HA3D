@@ -89,7 +89,10 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   /* ---------- rooms ---------- */
 
   const roomButtons = new Map();
-  for (const r of [{ id: 'all', name: 'All' }, ...config.rooms]) {
+  // ha3d: a room gets a tab only when a light, AC or plan entity is in it, unless the plan says "tab": true/false
+  const used = new Set([...config.lights, ...config.acs, ...(config.entities || [])].map((d) => d.room));
+  const tabbed = config.rooms.filter((r) => (typeof r.tab === 'boolean' ? r.tab : used.has(r.id)));
+  for (const r of [{ id: 'all', name: 'All' }, ...tabbed]) {
     const count = h('span.count.zero', '0');
     const b = h('button.room', { onclick: () => { haptic('tick'); selectRoom(r.id); } }, r.name, count);
     roomButtons.set(r.id, { b, count });
@@ -101,7 +104,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     ui.room = id;
     layoutTiles();
     update();
-    roomButtons.get(id).b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    roomButtons.get(id)?.b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); // ha3d: rooms without a tab
     onFocus(id === 'all' ? null : { kind: 'room', id });
   }
 

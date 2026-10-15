@@ -14,7 +14,8 @@
     { "id": "living",  "name": "Living",   "rect": [0, 3.6, 6.4, 4.6],   "floor": "oak" },
     { "id": "dining",  "name": "Dining",   "rect": [6.4, 3.6, 4.0, 4.6], "floor": "oak" },
     { "id": "hall",    "name": "Hall",     "rect": [10.4, 3.6, 3.2, 4.6], "floor": "stone" },
-    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet" }
+    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet" },
+    { "id": "storage", "name": "Storage",  "rect": [8.0, 8.2, 2.4, 2.0],  "floor": "stone" }
   ],
 
   "openings": [
@@ -30,7 +31,8 @@
     { "type": "window", "from": [0.9, 0],     "to": [2.3, 0], "sill": 1.5, "head": 2.2 },
     { "type": "window", "from": [11.0, 0],    "to": [13.0, 0] },
     { "type": "door",   "from": [1.4, 8.2],   "to": [2.3, 8.2] },
-    { "type": "window", "from": [0, 9.8],     "to": [0, 11.4] }
+    { "type": "window", "from": [0, 9.8],     "to": [0, 11.4] },
+    { "type": "door",   "from": [8.7, 8.2],   "to": [9.5, 8.2] }
   ],
 
   "furniture": [
@@ -67,7 +69,8 @@
     { "type": "poolTable",    "pos": [2.9, 10.7] },
     { "type": "sectional",    "pos": [6.2, 12.25], "rot": 180, "width": 2.6 },
     { "type": "treadmill",    "pos": [7.4, 9.4] },
-    { "type": "glassCabinet", "pos": [0.9, 13.0],  "rot": 180 }
+    { "type": "glassCabinet", "pos": [0.9, 13.0],  "rot": 180 },
+    { "type": "bookshelf",    "pos": [10.2, 9.3],  "rot": -90 }
   ],
 
   "lights": [

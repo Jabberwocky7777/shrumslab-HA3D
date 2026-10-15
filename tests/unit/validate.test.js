@@ -9,7 +9,7 @@ const room = demo.rooms[0].id;
 
 test('the demo plan is valid', () => {
   const { config, warnings } = validatePlan(demo);
-  assert.equal(config.rooms.length, 8);
+  assert.equal(config.rooms.length, 9);
   assert.equal(config.entities.length, 7);
   assert.deepEqual(warnings, []);
 });
@@ -90,4 +90,14 @@ test('in Fahrenheit, unset AC ranges and outdoorTemp get Fahrenheit defaults', (
   assert.equal(config.outdoorTemp, 24, 'the demo sets outdoorTemp itself');
   const celsius = validatePlan(p).config;
   assert.deepEqual([celsius.acs.at(-1).min, celsius.acs.at(-1).max], [16, 30]);
+});
+
+test('a room\'s "tab" must be true or false', () => {
+  const withTab = (tab) => ({ ...structuredClone(demo), rooms: demo.rooms.map((r, i) => (i ? r : { ...r, tab })) });
+  assert.doesNotThrow(() => validatePlan(withTab(true)));
+  assert.doesNotThrow(() => validatePlan(withTab(false)));
+  assert.equal(validatePlan(withTab(false)).config.rooms[0].tab, false, 'kept through normalize');
+  assert.equal(validatePlan(demo).config.rooms[0].tab, null);
+  assert.throws(() => validatePlan(withTab('yes')), /"tab" that is not true or false/);
+  assert.throws(() => validatePlan(withTab(1)), /"tab"/);
 });

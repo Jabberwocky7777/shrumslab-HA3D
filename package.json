@@ -1,6 +1,6 @@
 {
   "name": "shrumslab-ha3d",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A 3D home dashboard card for Home Assistant, based on house-control",
   "private": true,
   "type": "module",

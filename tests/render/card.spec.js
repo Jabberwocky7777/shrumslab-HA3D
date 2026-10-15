@@ -254,3 +254,31 @@ test('the editor shows every point of a multi-point light and moves them togethe
       link: { service: 'homeassistant', id: 'light.demo_rec_cans' },
     });
 });
+
+test('only rooms with devices get a tab, unless the plan says "tab"', async ({ page }) => {
+  const errors = await open(page);
+  const tabs = () => page.locator('house-control-card .rooms .room').allInnerTexts()
+    .then((names) => names.map((n) => n.replace(/\s*\d+$/, '').trim()));
+  // Storage has furniture but no light, AC or entity: no tab, but it is still part of the model
+  expect(await tabs()).toEqual(['All', 'Bedroom', 'Bathroom', 'Kitchen', 'Office', 'Living', 'Dining', 'Hall', 'Rec room']);
+  expect(await page.evaluate(() => window.__test.card._ui.debug.config.rooms.map((r) => r.id))).toContain('storage');
+
+  // "tab": true forces one on, "tab": false takes one away
+  await page.evaluate(() => {
+    const { card, config } = window.__test;
+    const plan = structuredClone(config.plan);
+    plan.rooms.find((r) => r.id === 'storage').tab = true;
+    plan.rooms.find((r) => r.id === 'bath').tab = false;
+    card.setConfig({ ...config, plan });
+  });
+  await expect.poll(tabs).toEqual(['All', 'Bedroom', 'Kitchen', 'Office', 'Living', 'Dining', 'Hall', 'Rec room', 'Storage']);
+  // the bathroom's devices are still listed under All and still switch
+  await expect(page.locator('house-control-card .tile[aria-label="Mirror light"]')).toHaveCount(1);
+  await resetCalls(page);
+  await page.locator('house-control-card .tile[aria-label="Mirror light"]').click();
+  await expect.poll(() => calls(page)).toContainEqual({ domain: 'light', service: 'turn_on', data: { entity_id: 'light.demo_bath_mirror' } });
+  // a forced tab on an empty room shows the empty state, not an error
+  await page.locator('house-control-card .room', { hasText: 'Storage' }).click();
+  await expect(page.locator('house-control-card .group-label')).toHaveText('No devices in this room yet');
+  expect(errors).toEqual([]);
+});
