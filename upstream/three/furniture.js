@@ -2,6 +2,7 @@
 // centred on its footprint and facing +z; the plan's "rot" turns it from there.
 import * as THREE from 'three';
 import { box, cyl, mat, at, rng } from './kit.js';
+import { extraBuilders, extraFootprints } from './extras.js'; // ha3d: extra furniture
 
 const WOOD = '#a98459';
 const DARK_WOOD = '#5a4334';
@@ -322,6 +323,7 @@ const builders = {
   },
 };
 
+Object.assign(builders, extraBuilders); // ha3d
 export const FURNITURE_TYPES = Object.keys(builders);
 
 // Approximate [width, depth] of each piece, for the 2D plan editor.
@@ -348,7 +350,7 @@ export function footprint(item) {
     case 'desk': return [w || 1.4, 0.65];
     case 'wardrobe': return [w || 1.6, 0.6];
     case 'bookshelf': return [w || 1, 0.32];
-    default: return [0.6, 0.6];
+    default: return extraFootprints[item.type] ? extraFootprints[item.type](item) : [0.6, 0.6]; // ha3d
   }
 }
 

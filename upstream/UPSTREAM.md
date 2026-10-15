@@ -39,3 +39,14 @@ git diff 3b223c0 upstream/main -- web/src     # what changed upstream since this
 
 Apply the relevant parts of that diff to the files here (paths are the same below `web/src/`),
 keep the `ha3d:` changes, update the commit above, and run `npm run check`.
+
+## Extra furniture and light fixtures (ha3d)
+
+`three/extras.js` is ours, not upstream's. It adds generic, configurable models used by
+real-world plans: `poolTable`, `sectional`, `glassCabinet`, `mediaWall`, `barCart`, `treadmill`,
+`popcornMachine`, `pokerTable`, `wetBar`, `darkBookcase`, `deskSetup`, `catTree`, `litterRobot`,
+`pedestalSink`, `tubShower`, `tubOnly`, `stairs`, `endTable`, `dehumidifier`, `airPurifier`,
+and light types `fan`, `pendantBar`, `sconce`, `cans` (multi-point: `"points": [[x, z], ...]`),
+and `dome`. Hooks into upstream are one line each, marked `// ha3d`, in `three/furniture.js`,
+`three/lights.js`, `three/kit.js` (carpet floor), `config.js` (light types, floor kinds),
+`editor/editor.js` (carpet fill) and `ui/icons.js`.

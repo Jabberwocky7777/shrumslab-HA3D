@@ -2,6 +2,7 @@
 // animation that eases both towards the device state.
 import * as THREE from 'three';
 import { box, cyl, mat, at } from './kit.js';
+import { extraFixtures } from './extras.js'; // ha3d: extra light fixtures
 
 const STOPS = [
   [2200, new THREE.Color('#ff9438')],
@@ -143,6 +144,7 @@ const fixtures = {
   },
 };
 
+Object.assign(fixtures, extraFixtures); // ha3d
 const tmp = new THREE.Color();
 
 export class LightUnit {

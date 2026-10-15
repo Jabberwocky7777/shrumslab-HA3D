@@ -23,7 +23,7 @@ const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', entity: 'entities', fu
 const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', entity: 'Other devices', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
 const ENTITY_ICONS = ['box', 'tv', 'thermo', 'fan', 'lock', 'garage', 'shield', 'camera', 'speaker', 'plug', 'blinds', 'door', 'sensor'];
 const isLinked = (d) => linkedDevice(d) || Boolean(d?.entity);
-const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c' };
+const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c', carpet: '#45403a' }; // ha3d: carpet
 const WALLS = ['north', 'east', 'south', 'west'];
 const SCENE_ICONS = ['sun', 'sofa', 'film', 'moon', 'door', 'table', 'bed', 'tv', 'sparkles'];
 

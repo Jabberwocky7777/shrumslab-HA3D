@@ -119,7 +119,21 @@ function tiles(base, perSide, grout) {
   });
 }
 
+// ha3d: wall-to-wall carpet
+function carpet(base) {
+  return canvasTexture(256, (g, s) => {
+    g.fillStyle = base;
+    g.fillRect(0, 0, s, s);
+    const r = rng(11);
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = shade(base, (r() - 0.5) * 0.08);
+      g.fillRect(r() * s, r() * s, 1.6, 1.6);
+    }
+  });
+}
+
 const FLOORS = {
+  carpet: () => carpet('#c9bca2'), // ha3d
   oak: () => planks('#c7a47c'),
   walnut: () => planks('#94705a'),
   tile: () => tiles('#d5dade', 4, '#aab0b8'),

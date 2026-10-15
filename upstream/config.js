@@ -1,7 +1,8 @@
 // Loads and normalises a floor plan ("home.json"). Everything the 3D scene and the UI
 // know about the apartment comes from this one document, so swapping the file swaps the home.
 
-const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip'];
+// ha3d: fan, pendantBar, sconce, cans and dome come from three/extras.js
+const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip', 'fan', 'pendantBar', 'sconce', 'cans', 'dome'];
 const WALLS = ['north', 'south', 'east', 'west'];
 
 export class ConfigError extends Error {}
@@ -28,7 +29,7 @@ export const SERVICES = {
   hue: { name: 'Philips Hue', short: 'Hue' },
   homekit: { name: 'Apple Home', short: 'Apple Home' },
 };
-export const FLOOR_KINDS = ['oak', 'walnut', 'tile', 'stone'];
+export const FLOOR_KINDS = ['oak', 'walnut', 'tile', 'stone', 'carpet']; // ha3d: carpet
 
 // ha3d: upstream fetched the plan from ./plans/<name>.json. In the card the plan only ever
 // comes from the card's own (authenticated) dashboard configuration, so nothing is fetched.
