@@ -1,0 +1,7 @@
+{
+  "name": "House Control 3D",
+  "filename": "shrumslab-ha3d.js",
+  "render_readme": true,
+  "hide_default_branch": true,
+  "homeassistant": "2024.11.0"
+}

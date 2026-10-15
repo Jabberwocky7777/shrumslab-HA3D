@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans the whole history
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Privacy check
+        run: npm run privacy
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: npm run build
+
+      - name: Bundle size
+        run: |
+          size=$(stat -c %s dist/shrumslab-ha3d.js)
+          gz=$(gzip -c dist/shrumslab-ha3d.js | wc -c)
+          echo "dist/shrumslab-ha3d.js: $size bytes, $gz gzipped" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Chromium for the render test
+        run: npx playwright install --with-deps chromium
+
+      - name: Headless render test
+        run: npm run test:render
+
+      - name: Screenshots (demo house only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-test
+          path: test-results/
+          if-no-files-found: ignore

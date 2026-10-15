@@ -1,0 +1,19 @@
+shrumslab-HA3D
+==============
+
+This project is a port of the web UI of house-control to a Home Assistant
+Lovelace card.
+
+  house-control
+  https://github.com/0xProbabillity/house-control
+  Copyright (c) 2026 0xProbability
+  MIT License (see LICENSE)
+
+The code under upstream/ is house-control's web/src at commit
+3b223c0, with the changes listed in
+upstream/UPSTREAM.md. The Home Assistant glue under src/ha/ and the rest of
+this repository are released under the same MIT License.
+
+The bundle also contains:
+  three.js  https://threejs.org            MIT License
+  Lucide    https://lucide.dev             ISC License

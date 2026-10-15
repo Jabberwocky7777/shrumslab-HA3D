@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>House Control card test page</title>
+    <style>html, body { margin: 0; height: 100%; background: #111; } #view { height: 100vh; }</style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <script type="module">
+      // Mounts the built card with a mock hass, the way a Lovelace panel view would.
+      import '/dist/shrumslab-ha3d.js';
+      import { createMockHass } from './mock-hass.js';
+
+      const params = new URLSearchParams(location.search);
+      const Card = customElements.get('house-control-card');
+      const config = { type: 'custom:house-control-card', ...Card.getStubConfig(), height: '100vh' };
+      const hass = createMockHass({
+        admin: params.get('admin') !== '0',
+        dashboard: { views: [{ type: 'panel', cards: [structuredClone(config)] }] },
+      });
+      const card = document.createElement('house-control-card');
+      card.setConfig(config);
+      const push = () => { card.hass = { ...hass, states: hass.states }; };
+      hass.listeners.add(push);
+      push();
+      document.getElementById('view').append(card);
+      window.__test = { card, hass, config, events: [] };
+      window.addEventListener('hass-more-info', (e) => window.__test.events.push({ type: 'hass-more-info', entityId: e.detail.entityId }));
+    </script>
+  </body>
+</html>

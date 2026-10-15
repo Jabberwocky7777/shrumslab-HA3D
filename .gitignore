@@ -1,0 +1,26 @@
+# dependencies and build output
+node_modules/
+dist/
+test-results/
+playwright-report/
+.DS_Store
+
+# Private house data never belongs in this repo (README, "Privacy").
+# The only plan here is the demo; work on a real plan in private/.
+private/
+*.plan.json
+plans/*
+!plans/demo.json
+*.glb
+*.blend
+*.zip
+*.heic
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+!images/**/*.png
+!docs/**/*.jpg
+!images/**/*.jpg
+!docs/**/*.jpeg
+!images/**/*.jpeg

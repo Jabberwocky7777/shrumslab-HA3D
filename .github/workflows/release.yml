@@ -1,0 +1,50 @@
+name: Release
+
+# A tag v* builds the card, runs every check and attaches the bundle to a DRAFT release.
+# Publishing the release (which is what HACS installs) is done by hand after review.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Version matches the tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "package.json has $version, the tag is $GITHUB_REF_NAME"; exit 1; }
+
+      - run: npm run lint
+      - run: npm test
+      - run: npm run privacy
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:render
+
+      - name: Draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/shrumslab-ha3d.js
