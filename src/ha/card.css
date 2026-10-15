@@ -81,3 +81,7 @@
 
 /* the editor's toolbar has one more tool here (Export) */
 .p-tools { grid-template-columns: repeat(5, 1fr); }
+
+/* lights with several fixtures ("points") on the editor's plan */
+.p-light .p-point-link { stroke: rgba(255, 180, 107, 0.45); stroke-width: 0.03; stroke-dasharray: 0.08 0.06; }
+.p-light .p-point-pos { fill: rgba(255, 180, 107, 0.6); stroke: none; }

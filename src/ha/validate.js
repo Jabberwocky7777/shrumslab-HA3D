@@ -54,6 +54,12 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
 
   config.lights.forEach((l, i) => {
     const rawLight = raw.lights[i];
+    // Several fixtures on one switch (cans, sconce): [[x, z], ...] or [[x, z, rot], ...] in plan metres.
+    if (l.points != null) {
+      need(Array.isArray(l.points) && l.points.length > 0, `Light "${l.id}" has "points" that is not a list of [x, z]`);
+      l.points.forEach((p, k) => need(Array.isArray(p) && (p.length === 2 || p.length === 3) && p.every(Number.isFinite),
+        `Light "${l.id}" point #${k + 1} must be [x, z] or [x, z, rotation]`));
+    }
     l.autoCapabilities = !('capabilities' in rawLight); // ha3d: worked out from supported_color_modes
     if (!l.link && !l.tuya) return;
     const entity = haLink(l);

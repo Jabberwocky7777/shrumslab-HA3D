@@ -27,7 +27,8 @@ shows the full patch.
 | `ui/dom.js` | `openMenu` uses `composedPath()`, so outside clicks work inside a shadow root. |
 | `ui/icons.js` | More icons (lock, garage, speaker...) and `iconNode()` for drawing icons on a canvas. |
 | `three/world.js` | Extra `entities` units (picked and animated like lamps), `wake()`, and `dispose()` frees geometries, materials and textures too. |
-| `editor/editor.js` | Hosted by the card: plan, save, close and entity pickers come in as options; Smart Life and connection screens removed; an `entities` section; export as `<name>.plan.json`; window listeners removed with an `AbortSignal`. |
+| `editor/points.js` | Ours: lights with `points` (cans, sconce) move and draw as one item in the editor. |
+| `editor/editor.js` | Multi-point lights drawn point by point and moved together (`points.js`); selecting a light no longer writes `capabilities: []`. Hosted by the card: plan, save, close and entity pickers come in as options; Smart Life and connection screens removed; an `entities` section; export as `<name>.plan.json`; window listeners removed with an `AbortSignal`. |
 
 ## Taking in upstream changes
 

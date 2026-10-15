@@ -9,6 +9,7 @@ import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
 import { h, clamp } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { haptic } from '../bridge.js';
+import { grab, moveBy, relativePoints } from './points.js'; // ha3d: multi-point lights
 
 const SVG = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, ...kids) => {
@@ -369,7 +370,16 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         transform: `translate(${l.pos[0]} ${l.pos[1]}) rotate(${-(l.rot || 0)})`,
       });
       if (big) g.append(sv('circle', { r: 0.58, class: 'hit' }));
-      if (l.type === 'strip') {
+      // ha3d: one dot per fixture of a multi-point light, joined to its pos; each is a handle for the whole light
+      const pts = relativePoints(l);
+      if (pts.length) {
+        for (const [px, pz] of pts) {
+          g.append(sv('line', { x1: 0, y1: 0, x2: px, y2: pz, class: 'p-point-link' }));
+          if (big) g.append(sv('circle', { cx: px, cy: pz, r: 0.4, class: 'hit' }));
+          g.append(sv('circle', { cx: px, cy: pz, r: 0.24, class: 'halo' }), sv('circle', { cx: px, cy: pz, r: 0.12, class: 'p-point' }));
+        }
+        g.append(sv('circle', { r: 0.08, class: 'p-point-pos' }));
+      } else if (l.type === 'strip') {
         const len = l.length || 1;
         g.append(sv('rect', { x: -len / 2, y: -0.07, width: len, height: 0.14, rx: 0.07 }));
       } else {
@@ -445,18 +455,18 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
       const inside = ([px, pz]) => px >= x - 1e-6 && px <= x + w + 1e-6 && pz >= z - 1e-6 && pz <= z + d + 1e-6;
       drag.rect = [...item.rect];
       // Everything standing in the room travels with it.
-      drag.riders = [
-        ...doc.lights.filter((l) => l.room === item.id).map((o) => ({ o, pos: [...o.pos] })),
-        ...doc.acs.filter((a) => a.room === item.id).map((o) => ({ o, pos: [...o.pos] })),
-        ...doc.entities.filter((e) => e.room === item.id && Array.isArray(e.pos)).map((o) => ({ o, pos: [...o.pos] })),
-        ...doc.furniture.filter((f) => Array.isArray(f.pos) && inside(f.pos)).map((o) => ({ o, pos: [...o.pos] })),
+      drag.riders = [ // ha3d: grab() keeps a light's points with it
+        ...doc.lights.filter((l) => l.room === item.id).map((o) => ({ o, from: grab(o) })),
+        ...doc.acs.filter((a) => a.room === item.id).map((o) => ({ o, from: grab(o) })),
+        ...doc.entities.filter((e) => e.room === item.id && Array.isArray(e.pos)).map((o) => ({ o, from: grab(o) })),
+        ...doc.furniture.filter((f) => Array.isArray(f.pos) && inside(f.pos)).map((o) => ({ o, from: grab(o) })),
       ];
       drag.openings = doc.openings.filter((o) => inside(o.from) && inside(o.to)).map((o) => ({ o, from: [...o.from], to: [...o.to] }));
     } else if (kind === 'opening') {
       drag.from = [...item.from];
       drag.to = [...item.to];
     } else {
-      drag.pos = [...item.pos];
+      drag.from = grab(item); // ha3d
     }
   }
 
@@ -479,7 +489,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
       const mz = round(pz - drag.start[1], 0.1);
       item.rect[0] = fix(drag.rect[0] + mx);
       item.rect[1] = fix(drag.rect[1] + mz);
-      for (const r of drag.riders) r.o.pos = [fix(r.pos[0] + mx), fix(r.pos[1] + mz)];
+      for (const r of drag.riders) moveBy(r.o, r.from, mx, mz);
       for (const r of drag.openings) {
         r.o.from = [fix(r.from[0] + mx), fix(r.from[1] + mz)];
         r.o.to = [fix(r.to[0] + mx), fix(r.to[1] + mz)];
@@ -490,7 +500,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     } else if (drag.kind === 'ac') {
       snapAC(item, [px, pz]);
     } else {
-      item.pos = [fix(drag.pos[0] + dx), fix(drag.pos[1] + dz)];
+      moveBy(item, drag.from, dx, dz); // ha3d: pos and points together
       if (drag.kind === 'light' || drag.kind === 'entity') {
         const room = roomAt(item.pos);
         if (room) item.room = room.id;
@@ -578,10 +588,15 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         h('p.note', 'Rooms that share an edge get an interior wall there. Add a door or an “open” gap to connect them.')));
     } else if (kind === 'light') {
       head(item.name || item.id, `id: ${item.id}`);
-      item.capabilities ||= [];
+      // ha3d: no "capabilities" means "ask Home Assistant", so only a ticked box writes one,
+      // and unticking the last one removes it again (an unlinked light is then on/off only).
       const cap = (name) => ({
-        get: () => item.capabilities.includes(name),
-        set: (on) => { item.capabilities = item.capabilities.filter((c) => c !== name); if (on) item.capabilities.push(name); },
+        get: () => (item.capabilities || []).includes(name),
+        set: (on) => {
+          const next = (item.capabilities || []).filter((c) => c !== name);
+          if (on) next.push(name);
+          if (next.length) item.capabilities = next; else delete item.capabilities;
+        },
       });
       nodes.push(section('Light',
         bind('Name', text(), prop(item, 'name', '')),
@@ -597,7 +612,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
           bind('Dimming', h('input', { type: 'checkbox' }), { ...cap('brightness'), event: 'change' }),
           bind('White temperature', h('input', { type: 'checkbox' }), { ...cap('temp'), event: 'change' }),
           bind('Colour', h('input', { type: 'checkbox' }), { ...cap('color'), event: 'change' })),
-        h('p.note', 'Leave all three off for a lamp on a plain smart plug: it is then a simple on/off switch.')),
+        h('p.note', 'Leave all three off and a light linked to Home Assistant takes its abilities from the entity; an unlinked one is then a simple on/off switch.')), // ha3d
       links.deviceSection(item, 'light', linkHooks));
     } else if (kind === 'ac') {
       head(item.name || item.id, `id: ${item.id}`);
@@ -762,10 +777,10 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
       ev.preventDefault();
       const stepSize = ev.shiftKey ? 0.5 : 0.05;
       snapshot(`nudge${sel.kind}${sel.index}`);
-      if (ev.key === 'ArrowLeft') target[0] = fix(target[0] - stepSize);
-      if (ev.key === 'ArrowRight') target[0] = fix(target[0] + stepSize);
-      if (ev.key === 'ArrowUp') target[1] = fix(target[1] - stepSize);
-      if (ev.key === 'ArrowDown') target[1] = fix(target[1] + stepSize);
+      const dx = ev.key === 'ArrowLeft' ? -stepSize : ev.key === 'ArrowRight' ? stepSize : 0;
+      const dz = ev.key === 'ArrowUp' ? -stepSize : ev.key === 'ArrowDown' ? stepSize : 0;
+      if (item.pos) moveBy(item, grab(item), dx, dz); // ha3d: a light's points move with it
+      else { target[0] = fix(target[0] + dx); target[1] = fix(target[1] + dz); }
       touch();
     }
   }, { signal });
