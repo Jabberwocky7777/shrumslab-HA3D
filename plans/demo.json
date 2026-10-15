@@ -13,7 +13,8 @@
     { "id": "office",  "name": "Office",   "rect": [10.4, 0, 3.2, 3.6],  "floor": "oak" },
     { "id": "living",  "name": "Living",   "rect": [0, 3.6, 6.4, 4.6],   "floor": "oak" },
     { "id": "dining",  "name": "Dining",   "rect": [6.4, 3.6, 4.0, 4.6], "floor": "oak" },
-    { "id": "hall",    "name": "Hall",     "rect": [10.4, 3.6, 3.2, 4.6], "floor": "stone" }
+    { "id": "hall",    "name": "Hall",     "rect": [10.4, 3.6, 3.2, 4.6], "floor": "stone" },
+    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet" }
   ],
 
   "openings": [
@@ -27,7 +28,9 @@
     { "type": "window", "from": [0, 1.0],     "to": [0, 2.6] },
     { "type": "window", "from": [0, 7.0],     "to": [0, 7.9] },
     { "type": "window", "from": [0.9, 0],     "to": [2.3, 0], "sill": 1.5, "head": 2.2 },
-    { "type": "window", "from": [11.0, 0],    "to": [13.0, 0] }
+    { "type": "window", "from": [11.0, 0],    "to": [13.0, 0] },
+    { "type": "door",   "from": [1.4, 8.2],   "to": [2.3, 8.2] },
+    { "type": "window", "from": [0, 9.8],     "to": [0, 11.4] }
   ],
 
   "furniture": [
@@ -59,7 +62,12 @@
     { "type": "plant",       "pos": [10.8, 3.1],  "height": 1.0 },
 
     { "type": "rug",         "pos": [12.0, 6.6],  "size": [1.4, 2.0], "color": "#4a4f5e" },
-    { "type": "wardrobe",    "pos": [13.3, 4.6],  "rot": -90, "width": 1.4 }
+    { "type": "wardrobe",    "pos": [13.3, 4.6],  "rot": -90, "width": 1.4 },
+
+    { "type": "poolTable",    "pos": [2.9, 10.7] },
+    { "type": "sectional",    "pos": [6.2, 12.25], "rot": 180, "width": 2.6 },
+    { "type": "treadmill",    "pos": [7.4, 9.4] },
+    { "type": "glassCabinet", "pos": [0.9, 13.0],  "rot": 180 }
   ],
 
   "lights": [
@@ -98,7 +106,20 @@
       "link": { "service": "homeassistant", "id": "switch.demo_desk_lamp" } },
 
     { "id": "hall.main",      "name": "Ceiling",       "room": "hall",    "type": "ceiling", "pos": [12.0, 5.9],
-      "link": { "service": "homeassistant", "id": "light.demo_hall_ceiling" } }
+      "link": { "service": "homeassistant", "id": "light.demo_hall_ceiling" } },
+
+    { "id": "rec.cans",       "name": "Cans",          "room": "rec",     "type": "cans",    "pos": [6.2, 11.6],
+      "points": [[5.3, 10.9], [7.1, 10.9], [5.3, 12.3], [7.1, 12.3]],
+      "link": { "service": "homeassistant", "id": "light.demo_rec_cans" } },
+    { "id": "rec.pool",       "name": "Pool table",    "room": "rec",     "type": "pendantBar", "pos": [2.9, 10.7], "length": 1.4,
+      "link": { "service": "homeassistant", "id": "light.demo_rec_pool_table" } },
+    { "id": "rec.sconces",    "name": "Sconces",       "room": "rec",     "type": "sconce",  "pos": [0.03, 10.6],
+      "points": [[0.03, 9.2, 90], [0.03, 12.0, 90]],
+      "link": { "service": "homeassistant", "id": "light.demo_rec_sconces" } },
+    { "id": "rec.fan",        "name": "Fan light",     "room": "rec",     "type": "fan",     "pos": [5.2, 9.6],
+      "link": { "service": "homeassistant", "id": "light.demo_rec_fan_light" } },
+    { "id": "rec.dome",       "name": "Entry",         "room": "rec",     "type": "dome",    "pos": [1.85, 8.9],
+      "link": { "service": "homeassistant", "id": "light.demo_rec_dome" } }
   ],
 
   "acs": [

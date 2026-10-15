@@ -78,8 +78,15 @@ notch.
 The plan format is house-control's, with Home Assistant links and a new `entities` section. See
 **[docs/plan-format.md](docs/plan-format.md)**. In short:
 
-- `rooms` are rectangles in metres (`x` grows east, `z` grows south), `openings` are doors and
-  windows, `furniture` is decoration.
+- `rooms` are rectangles in metres (`x` grows east, `z` grows south), with `oak`, `walnut`,
+  `tile`, `stone` or `carpet` floors. `openings` are doors and windows, `furniture` is decoration:
+  house-control's pieces (sofa, bed, kitchen, dining set...) plus this card's extras: `poolTable`,
+  `sectional`, `glassCabinet`, `darkBookcase`, `mediaWall`, `wetBar`, `barCart`, `pokerTable`,
+  `popcornMachine`, `treadmill`, `deskSetup`, `endTable`, `pedestalSink`, `tubOnly`, `tubShower`,
+  `stairs`, `catTree`, `litterRobot`, `dehumidifier`, `airPurifier`.
+- Light fixtures: `ceiling`, `pendant`, `spots`, `floor`, `table`, `strip`, plus `fan`,
+  `pendantBar`, `dome`, and `cans` and `sconce`, which take a `points` list for several
+  fixtures on one switch.
 - `lights` link to `light.*` or `switch.*` entities with `link: { service: homeassistant, id: ... }`.
   Leave `capabilities` out and they come from the entity's `supported_color_modes`.
 - `entities` holds everything else (TV, thermostat, lock...); `tap` is `more-info`, `toggle` or

@@ -195,3 +195,62 @@ test('the AC sheet follows Home Assistant\'s temperature unit', async ({ page },
   await page.locator('house-control-card .sheet button[aria-label="Warmer"]').click();
   await expect.poll(() => calls(page)).toContainEqual({ domain: 'climate', service: 'set_temperature', data: { entity_id: 'climate.demo_bedroom_ac', temperature: 74 } });
 });
+
+test('the Rec room loads the extra furniture and light types without console errors', async ({ page }, info) => {
+  const urls = recordRequests(page);
+  const consoleErrors = [];
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleErrors.push(m.text()); });
+  const errors = await open(page);
+  const loaded = await page.evaluate(() => {
+    const { world, config } = window.__test.card._ui.debug;
+    const unit = (id) => world.lights.get(id);
+    return {
+      furniture: config.furniture.map((f) => f.type),
+      fixtures: Object.fromEntries(['rec.cans', 'rec.pool', 'rec.sconces', 'rec.fan', 'rec.dome']
+        .map((id) => [id, unit(id) ? unit(id).lights.length : 0])),
+    };
+  });
+  for (const type of ['poolTable', 'sectional', 'treadmill', 'glassCabinet']) expect(loaded.furniture).toContain(type);
+  // one three.js light per fixture: four cans, two sconces, the bar's two shades
+  expect(loaded.fixtures).toEqual({ 'rec.cans': 4, 'rec.pool': 2, 'rec.sconces': 2, 'rec.fan': 1, 'rec.dome': 1 });
+
+  await page.locator('house-control-card .room', { hasText: 'Rec room' }).click();
+  await expect(page.locator('house-control-card .tile[aria-label="Cans"]')).toBeVisible();
+  await resetCalls(page);
+  await page.locator('house-control-card .tile[aria-label="Cans"]').click();
+  await expect.poll(() => calls(page)).toContainEqual({ domain: 'light', service: 'turn_on', data: { entity_id: 'light.demo_rec_cans' } });
+  await page.evaluate(() => {
+    const { hass } = window.__test;
+    for (const id of ['light.demo_rec_pool_table', 'light.demo_rec_sconces', 'light.demo_rec_fan_light']) {
+      hass.set(id, { ...hass.states[id], state: 'on', attributes: { ...hass.states[id].attributes, brightness: 230 } });
+    }
+  });
+  await expect.poll(() => page.evaluate(() => window.__test.card._ui.debug.world.lights.get('rec.pool').goal)).toBeGreaterThan(0.8);
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: info.outputPath('rec-room.png') });
+  expect(errors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expectSameOrigin(urls, page.url());
+});
+
+test('the editor shows every point of a multi-point light and moves them together', async ({ page }, info) => {
+  await open(page);
+  await page.locator('house-control-card .top .round:not(.power)').click();
+  await page.locator('house-control-card .menu button', { hasText: 'Edit home' }).click();
+  const layer = page.locator('house-control-card .hc-editor-layer');
+  await expect(layer.locator('.p-light.cans .p-point')).toHaveCount(4);
+  await expect(layer.locator('.p-light.sconce .p-point')).toHaveCount(2);
+  await layer.locator('.p-light.cans .p-point').first().click();
+  await expect(layer.locator('.p-light.cans.sel')).toHaveCount(1);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await page.screenshot({ path: info.outputPath('editor-points.png') });
+  await page.locator('house-control-card .p-save').click();
+  // exact: also proves selecting a light did not write "capabilities": [] (that would make it on/off only)
+  await expect.poll(() => page.evaluate(() => window.__test.hass.dashboard.views[0].cards[0].plan.lights.find((l) => l.id === 'rec.cans')))
+    .toEqual({
+      id: 'rec.cans', name: 'Cans', room: 'rec', type: 'cans', pos: [6.25, 11.65],
+      points: [[5.35, 10.95], [7.15, 10.95], [5.35, 12.35], [7.15, 12.35]],
+      link: { service: 'homeassistant', id: 'light.demo_rec_cans' },
+    });
+});

@@ -10,7 +10,8 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 
 const DOMAINS = 'light|switch|lock|cover|climate|fan|media_player|alarm_control_panel|binary_sensor|sensor|camera|remote|script|scene|input_boolean|input_button|button|vacuum|valve|siren';
-const ENTITY = new RegExp(`\\b(${DOMAINS})\\.([a-z0-9_]+)\\b`, 'g');
+// Not when glued to "-" or "." (CSS classes like .p-light.cans, paths like a.light.x).
+const ENTITY = new RegExp(`(?<![-.\\w])(${DOMAINS})\\.([a-z0-9_]+)\\b`, 'g');
 
 // Service names (light.turn_on) and documentation placeholders (light.your_light) are fine.
 const SERVICES = new Set(['turn_on', 'turn_off', 'toggle', 'set_temperature', 'set_hvac_mode', 'set_fan_mode',

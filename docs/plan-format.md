@@ -37,19 +37,67 @@ the south wall.
 
 | Section | Fields |
 | --- | --- |
-| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (`oak`, `walnut`, `tile`, `stone`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. |
+| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (`oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. |
 | `openings` | `type` (`door`, `window`, `open`), `from: [x, z]`, `to: [x, z]` on one wall line (same x or same z), windows also `sill`, `head` |
-| `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet` |
+| `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet`, and the extra models below |
+
+### Extra furniture
+
+These come from this card (`upstream/three/extras.js`), not from house-control. Every option is
+optional; the defaults are in brackets.
+
+| `type` | Options |
+| --- | --- |
+| `poolTable` | `width` (2.5), `depth` (1.4), `felt`, `wood`, `balls` (`true`: a racked set) |
+| `sectional` | U-shaped sofa with a chaise at each end, facing forward: `width` (2.6), `depth` (0.95), `chaise` (0.85), `chaiseWidth` (0.95), `color` |
+| `glassCabinet` | Tall cabinet with glass doors and shelves of collectibles: `width` (0.9), `height` (2.0), `color`, `seed` (varies the shelves) |
+| `darkBookcase` | `width` (0.8), `height` (1.95), `color`, `seed` |
+| `mediaWall` | Wall-mounted TV over a media console: `width` (1.75), `screen` (1.45, the screen's width) |
+| `wetBar` | Base and wall cabinets with a sink: `width` (1.85), `wood`, `top`, `fridge` (`true`: a mini fridge at the +x end) |
+| `barCart` | Two tiers with bottles: `width` (0.95), `depth` (0.4) |
+| `pokerTable` | Round table with bar stools around it: `diameter` (1.3), `stools` (5), `wood`, `felt` |
+| `popcornMachine` | — |
+| `treadmill` | Deck along z, console at the back: `length` (1.9), `width` (0.85) |
+| `deskSetup` | Desk with two monitors and an office chair: `width` (2.0), `depth` (0.7), `chair` (colour) |
+| `endTable` | `width` (0.5), `depth` (0.45), `height` (0.6), `color` |
+| `pedestalSink` | With a mirror above: `width` (0.6) |
+| `tubOnly`, `tubShower` | Bathtub, with or without a shower curtain: `length` (1.55) |
+| `stairs` | A straight flight rising towards the back: `width` (1.0), `length` (3.5), `rise` (2.6), `steps` (14), `color` |
+| `catTree` | `height` (1.6), `cat` (colour) |
+| `litterRobot` | A self-cleaning litter box |
+| `dehumidifier`, `airPurifier` | `width`, `depth`, `height` |
 
 ## `lights`
 
 | Field | Meaning |
 | --- | --- |
 | `id`, `name`, `room` | Unique id, the tile's label, the `id` of its room |
-| `type` | `ceiling`, `pendant`, `spots`, `floor`, `table` or `strip` |
-| `pos`, `y`, `rot`, `length` | Position, height, rotation, length of a strip |
+| `type` | `ceiling`, `pendant`, `spots`, `floor`, `table`, `strip`, or one of this card's extra types: `fan`, `pendantBar`, `sconce`, `cans`, `dome` (below) |
+| `pos`, `y`, `rot`, `length` | Position, height, rotation, length of a strip or pendant bar |
+| `points` | `cans` and `sconce` only: several fixtures on one switch, see below |
 | `capabilities` | Any of `brightness`, `temp`, `color`. **Leave it out** for a linked light and the card works it out from the entity's `supported_color_modes`. `[]` means on/off only |
 | `link` | `{ "service": "homeassistant", "id": "light.your_light" }`. Only `light.*` and `switch.*` entities; a `switch.*` is always on/off only |
+
+### Extra light types
+
+| `type` | What it is | Options |
+| --- | --- | --- |
+| `fan` | Ceiling fan with a bowl light; the light entity drives the bowl | `y`, `blades` (colour) |
+| `pendantBar` | A bar with two dome shades, e.g. over a pool table or an island | `length` (1.3, along x), `shade` (colour), `y` (1.55) |
+| `dome` | Flush dome ceiling light | `y` |
+| `cans` | Recessed ceiling cans on one switch | `points: [[x, z], ...]` |
+| `sconce` | Wall sconces on one switch | `points: [[x, z, rot], ...]`; `rot` turns each sconce away from its wall (`90` on a west wall, `-90` east, `0` north, `180` south) |
+
+`points` are plan coordinates, like `pos`. `pos` is where the light's tile and tap target sit; put it
+in the middle of its points. In the editor the points show as dots joined to `pos`, and dragging any
+of them moves the whole light. Leave `rot` at `0` for these two types: it would turn every point
+around `pos`.
+
+```json
+{ "id": "rec.cans", "name": "Cans", "room": "rec", "type": "cans", "pos": [6.2, 11.6],
+  "points": [[5.3, 10.9], [7.1, 10.9], [5.3, 12.3], [7.1, 12.3]],
+  "link": { "service": "homeassistant", "id": "light.your_cans" } }
+```
 
 A light without a `link` is simulated: tapping it only changes the picture.
 

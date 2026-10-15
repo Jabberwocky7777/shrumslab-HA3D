@@ -23,6 +23,11 @@ export function demoStates() {
     light('light.demo_office_ceiling', 'Office ceiling', ['brightness']),
     plain('switch.demo_desk_lamp', 'Desk lamp', 'on'),
     light('light.demo_hall_ceiling', 'Hall ceiling', ['color_temp']),
+    light('light.demo_rec_cans', 'Rec room cans', ['brightness']),
+    light('light.demo_rec_pool_table', 'Pool table light', ['color_temp']),
+    light('light.demo_rec_sconces', 'Rec room sconces', ['onoff']),
+    light('light.demo_rec_fan_light', 'Rec room fan light', ['brightness']),
+    light('light.demo_rec_dome', 'Rec room entry', ['onoff']),
     plain('climate.demo_bedroom_ac', 'Bedroom AC', 'off', {
       hvac_modes: ['off', 'cool', 'heat', 'fan_only', 'auto'], fan_modes: ['auto', 'low', 'high'],
       temperature: 23, current_temperature: 25.5, min_temp: 16, max_temp: 30, fan_mode: 'auto',
