@@ -30,23 +30,8 @@ export const SERVICES = {
 };
 export const FLOOR_KINDS = ['oak', 'walnut', 'tile', 'stone'];
 
-// The plan exactly as written on disk (the editor works on this form).
-export async function loadRawConfig() {
-  const boot = window.__HOUSE_BOOT__;
-  if (boot?.config) return boot.config;
-  const plan = (boot?.plan !== 'custom' && boot?.plan) || new URLSearchParams(location.search).get('plan') || 'home';
-  const res = await fetch(`./plans/${plan}.json`);
-  if (!res.ok) throw new ConfigError(`Plan "${plan}" not found (HTTP ${res.status})`);
-  try {
-    return await res.json();
-  } catch (e) {
-    throw new ConfigError(`Plan "${plan}" is not valid JSON: ${e.message}`);
-  }
-}
-
-export async function loadConfig() {
-  return normalize(await loadRawConfig());
-}
+// ha3d: upstream fetched the plan from ./plans/<name>.json. In the card the plan only ever
+// comes from the card's own (authenticated) dashboard configuration, so nothing is fetched.
 
 function need(cond, msg) {
   if (!cond) throw new ConfigError(msg);
@@ -104,7 +89,7 @@ export function normalize(raw) {
 
   const scenes = (raw.scenes || []).map((s) => {
     need(typeof s.id === 'string' && s.id, 'A scene is missing an "id"');
-    return { id: s.id, name: s.name || s.id, icon: s.icon || 'sun', lights: s.lights || {}, acs: s.acs || {} };
+    return { id: s.id, name: s.name || s.id, icon: s.icon || 'sun', lights: s.lights || {}, acs: s.acs || {}, run: s.run || null }; // ha3d: run
   });
 
   const minX = Math.min(...rooms.map((r) => r.x));

@@ -19,7 +19,9 @@ const EL_MAX = 70;
 const ZOOM_MIN = 0.55;     // closest
 const ZOOM_MAX = 1.2;
 
-export function createWorld(canvas, config, store, { onHover, onPick, background = STAGE_BG }) {
+// ha3d: `entities` is a Map of extra units (src/ha/markers.js) drawn and picked like the lamps:
+// each has { group, hit, anchor(v), update(dt) } and its hit mesh carries { kind: 'entity', id }.
+export function createWorld(canvas, config, store, { onHover, onPick, background = STAGE_BG, entities = new Map() }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -59,7 +61,9 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     acs.set(cfg.id, unit);
     scene.add(unit.group);
   }
-  const hitTargets = [...[...lights.values()].map((u) => u.hit), ...[...acs.values()].map((u) => u.hit), ...house.floors];
+  for (const unit of entities.values()) scene.add(unit.group); // ha3d
+  const hitTargets = [...[...lights.values()].map((u) => u.hit), ...[...acs.values()].map((u) => u.hit),
+    ...[...entities.values()].map((u) => u.hit), ...house.floors];
 
   // Night-time ambience: enough to read the model with every lamp off.
   scene.add(new THREE.HemisphereLight(0x8ea6ff, 0x0b0e17, 0.42));
@@ -206,7 +210,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   }
 
   function unitOf(t) {
-    return t?.kind === 'light' ? lights.get(t.id) : t?.kind === 'ac' ? acs.get(t.id) : null;
+    return t?.kind === 'light' ? lights.get(t.id) : t?.kind === 'ac' ? acs.get(t.id) : t?.kind === 'entity' ? entities.get(t.id) : null;
   }
 
   function screenAnchor(t) {
@@ -322,6 +326,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     let active = updateRig(dt);
     for (const unit of lights.values()) active = unit.update(dt) || active;
     for (const unit of acs.values()) active = unit.update(dt) || active;
+    for (const unit of entities.values()) active = unit.update(dt) || active; // ha3d
     if (shadowFrames > 0) { renderer.shadowMap.needsUpdate = true; shadowFrames--; active = true; }
     if (active || awake > 0) {
       composer.render(dt);
@@ -352,6 +357,8 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   const world = {
     lights,
     acs,
+    entities, // ha3d
+    wake, // ha3d: something outside the store (Home Assistant state of an entity) changed
 
     setInsets(top, bottom) { topInset = top; bottomInset = bottom; resize(); },
     resize,
@@ -392,6 +399,12 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
       raf = 0;
       composer.dispose();
       target.dispose();
+      // ha3d: the card comes and goes with every dashboard re-render: free the GPU memory too.
+      scene.traverse((o) => {
+        o.geometry?.dispose();
+        for (const m of [].concat(o.material || [])) { m.map?.dispose(); m.dispose(); }
+        o.shadow?.map?.dispose();
+      });
       renderer.dispose();
       renderer.forceContextLoss();
     },
@@ -402,6 +415,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
         updateRig(0.05);
         for (const unit of lights.values()) unit.update(0.05);
         for (const unit of acs.values()) unit.update(0.05);
+        for (const unit of entities.values()) unit.update(0.05); // ha3d
       }
       renderer.shadowMap.needsUpdate = true;
       composer.render(0);

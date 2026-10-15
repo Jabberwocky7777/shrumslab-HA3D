@@ -91,9 +91,11 @@ export function openMenu(host, anchor, items, { onClose } = {}) {
     setTimeout(() => menu.remove(), 150);
     onClose?.();
   };
+  // ha3d: inside a shadow root ev.target is retargeted to the card element; use the composed path.
   const outside = (ev) => {
-    if (menu.contains(ev.target)) return;
-    if (anchor.contains(ev.target)) ev.stopPropagation(); // the click that would re-open it
+    const path = ev.composedPath();
+    if (path.includes(menu)) return;
+    if (path.includes(anchor)) ev.stopPropagation(); // the click that would re-open it
     close();
   };
   const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };

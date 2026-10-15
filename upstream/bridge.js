@@ -1,45 +1,22 @@
-// Thin bridge to the native shell (the macOS menu bar app or the iPhone app). In a plain
-// browser every call is a no-op, so the same bundle runs under `vite dev` too.
+// ha3d: upstream's bridge talked to the native shell through window.webkit.messageHandlers.
+// In the Home Assistant card there is no native shell: devices are reached through the `hass`
+// object (src/ha/bridge.js), so everything here is local and nothing leaves the page.
 
-const handler = window.webkit?.messageHandlers?.house;
+export const isNative = false;
 
-export const isNative = Boolean(handler);
+// The card always uses house-control's iPhone layout.
+export const platform = 'ios';
+export const isPhone = true;
 
-// 'ios' inside the iPhone app (or with ?platform=ios in a browser, to work on that layout).
-export const platform = window.__HOUSE_BOOT__?.platform
-  || new URLSearchParams(location.search).get('platform') || (handler ? 'macos' : 'web');
-export const isPhone = platform === 'ios';
+// Native messages are gone; kept as a no-op so upstream call sites stay unchanged.
+export function post() {}
 
-export function post(type, payload = {}) {
-  handler?.postMessage({ type, ...payload });
-}
+// Home Assistant's frontend forwards a `haptic` window event to the companion app.
+// https://github.com/home-assistant/frontend/blob/dev/src/data/haptics.ts
+const HAPTICS = { tick: 'selection', light: 'light', medium: 'medium', heavy: 'heavy', success: 'success', error: 'failure' };
 
-// A tap you can feel, on the iPhone only: 'tick' for a step of a slider, 'light' /
-// 'medium' for a switch or a scene, 'error' when a device refuses a change.
 export function haptic(kind = 'light') {
-  if (isPhone) post('haptic', { kind });
+  const type = HAPTICS[kind];
+  if (!type) return;
+  window.dispatchEvent(new CustomEvent('haptic', { detail: type, bubbles: true, composed: true }));
 }
-
-// Native -> JS entry points are attached here by main.js.
-export const incoming = (window.house = window.house || {});
-
-// Request/response on top of the one-way message channel.
-let nextId = 1;
-const pending = new Map();
-
-export function call(type, payload = {}) {
-  if (!handler) return Promise.reject(new Error('Only available inside the app'));
-  return new Promise((resolve, reject) => {
-    const id = nextId++;
-    pending.set(id, { resolve, reject });
-    handler.postMessage({ type, callId: id, ...payload });
-  });
-}
-
-incoming.reply = (id, result) => {
-  const p = pending.get(id);
-  if (!p) return;
-  pending.delete(id);
-  if (result && result.error) p.reject(Object.assign(new Error(result.error), { detail: result }));
-  else p.resolve(result);
-};

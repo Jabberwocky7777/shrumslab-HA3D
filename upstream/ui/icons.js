@@ -7,6 +7,9 @@ import {
   Undo2, Activity, KeyRound, ArrowUpRight, Camera, Square,
   HouseWifi, Smartphone, Radar, CircleCheck, CircleAlert, ChevronRight, Unlink, LoaderCircle, Router,
   List, Trash2, Scan, Redo2, Map as MapIcon, DoorClosed, Armchair,
+  // ha3d: devices from Home Assistant
+  Lock, LockOpen, Warehouse, Speaker, Blinds, Gauge, Siren, Bell, Music, WashingMachine, Car, Coffee, Droplet,
+  Gamepad2, Monitor, Heater, Shield, Upload, Play, Bot, Waves, ToggleRight,
 } from 'lucide';
 
 const ICONS = {
@@ -23,7 +26,16 @@ const ICONS = {
   homeassistant: HouseWifi, phone: Smartphone, radar: Radar, ok: CircleCheck, alert: CircleAlert,
   next: ChevronRight, unlink: Unlink, spinner: LoaderCircle, bridge: Router, bulb: Lightbulb,
   list: List, trash: Trash2, fit: Scan, redo: Redo2, map: MapIcon, opening: DoorClosed, furniture: Armchair,
+  // ha3d
+  lock: Lock, unlock: LockOpen, garage: Warehouse, speaker: Speaker, blinds: Blinds, sensor: Gauge, siren: Siren,
+  bell: Bell, music: Music, washer: WashingMachine, car: Car, coffee: Coffee, water: Droplet, gamepad: Gamepad2,
+  monitor: Monitor, heater: Heater, alarm: Shield, upload: Upload, play: Play, robot: Bot, pool: Waves,
+  switch: ToggleRight, thermometer: Thermometer, lightbulb: Lightbulb, 'ceiling-fan': Fan,
 };
+
+// ha3d: the raw lucide drawing ([tag, attributes] pairs), for icons painted on a canvas in the 3D view.
+export const iconNode = (name) => ICONS[name] || ICONS.sparkles;
+export const hasIcon = (name) => name in ICONS;
 
 export function icon(name, size = 18, stroke = 1.8) {
   const el = createElement(ICONS[name] || ICONS.sparkles);

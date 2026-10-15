@@ -2,14 +2,13 @@
 // things around on, an inspector for the selected item, a live 3D preview and the links to
 // real devices. On a phone the same pieces are laid out for a finger: the plan fills the
 // screen, the inspector is a sheet from the bottom, pinch zooms and drag pans.
-import './editor.css';
-import { normalize, loadRawConfig, LIGHT_KINDS, FLOOR_KINDS, isLinked } from '../config.js';
+// ha3d: editor.css is injected into the card's shadow root by src/ha/styles.js
+import { normalize, LIGHT_KINDS, FLOOR_KINDS, isLinked as linkedDevice } from '../config.js';
 import { createWorld } from '../three/world.js';
 import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
 import { h, clamp } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
-import { isNative, isPhone, call, post, haptic, incoming } from '../bridge.js';
-import { createConnections } from './connections.js';
+import { haptic } from '../bridge.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, ...kids) => {
@@ -19,54 +18,39 @@ const sv = (tag, attrs = {}, ...kids) => {
   return el;
 };
 
-const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
-const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
+// ha3d: `entity` is the plan's `entities` section (other Home Assistant devices: TV, thermostat, lock...).
+const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', entity: 'entities', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
+const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', entity: 'Other devices', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
+const ENTITY_ICONS = ['box', 'tv', 'thermo', 'fan', 'lock', 'garage', 'shield', 'camera', 'speaker', 'plug', 'blinds', 'door', 'sensor'];
+const isLinked = (d) => linkedDevice(d) || Boolean(d?.entity);
 const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c' };
 const WALLS = ['north', 'east', 'south', 'west'];
 const SCENE_ICONS = ['sun', 'sofa', 'film', 'moon', 'door', 'table', 'bed', 'tv', 'sparkles'];
-const REGIONS = [
-  ['eu', 'Central Europe'], ['eu-w', 'Western Europe'], ['us', 'Western America'], ['us-e', 'Eastern America'],
-  ['cn', 'China'], ['in', 'India'], ['sg', 'Singapore'],
-];
 
 const round = (v, step = 0.05) => Math.round(v / step) * step;
 const fix = (v) => Math.round(v * 1000) / 1000;
 const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
 
-export async function bootEditor(root) {
-  let doc = structuredClone(await loadRawConfig());
+// ha3d: hosted by the Home Assistant card (src/ha/editor-dialog.js) instead of a native window.
+//   plan      the plan to edit (never fetched)
+//   onSave    async (plan) => message; throws when it could not be saved
+//   onClose   the editor is done
+//   links     Home Assistant entity pickers (src/ha/editor-links.js)
+//   validate  plan -> normalised plan, throws a ConfigError (defaults to upstream's normalize)
+//   signal    AbortSignal that removes the editor's window listeners
+//   phone     the iPhone layout (default) or the Mac one
+export async function bootEditor(root, { plan: initialPlan, onSave, onClose, links, validate: check = normalize, signal, phone: isPhone = true }) {
+  let doc = structuredClone(initialPlan);
   for (const key of Object.values(KEYS)) doc[key] ||= [];
+  const activeElement = () => root.getRootNode().activeElement; // ha3d: document.activeElement is the card in a shadow root
 
-  // HOUSE_OPEN_EDITOR=connections|smartlife|homeassistant|hue|homekit opens a connection screen.
-  const startAt = window.__HOUSE_BOOT__?.section || new URLSearchParams(location.search).get('section') || '';
-  let sel = startAt === 'connections' ? { kind: 'connections' }
-    : startAt.startsWith('service:') ? { kind: 'service', service: startAt.slice(8) }
-      : startAt === 'tuya' ? { kind: 'service', service: 'smartlife' } : { kind: 'home' };
+  let sel = { kind: 'home' };
   let dirty = false;
   let world = null;
   let phone = null; // the iPhone's layout and gestures, set up by buildPhoneLayout()
   let previewLights = true;
   const undo = [];
   const redo = [];
-  const tuya = {
-    info: window.__HOUSE_BOOT__?.tuya || { configured: false, accessId: '', region: 'eu' },
-    account: window.__HOUSE_BOOT__?.smartLife || { connected: false, userCode: '', account: '' },
-    devices: null, busy: false, error: null, qr: null,
-    get linked() { return this.account.connected || this.info.configured; },
-  };
-  const links = createConnections({
-    rerender: () => {
-      renderSidebar();
-      if (['connections', 'service', 'light', 'ac'].includes(sel.kind)) renderInspector();
-    },
-    toast,
-    usedBy: () => links.usedMap(doc),
-    // On the iPhone the connection screens are native ones, shown over the editor.
-    onOpen: (service) => (isPhone && service ? post('openConnection', { service })
-      : select(service ? { kind: 'service', service } : { kind: 'connections' })),
-  });
-  // Smart Life signed in or out on its own screen: the overview and the pickers follow.
-  const smartLifeChanged = () => links.refreshInfo().then(() => links.load({ quiet: true }));
 
   /* ---------- layout ---------- */
 
@@ -93,7 +77,8 @@ export async function bootEditor(root) {
         h('button.btn', { title: 'Redo (⇧⌘Z)', onclick: () => stepHistory(redo, undo) }, 'Redo'),
         h('button.btn', { onclick: importPlan }, 'Import…'),
         h('button.btn', { onclick: exportPlan }, 'Export…'),
-        saveBtn)),
+        saveBtn,
+        h('button.btn', { onclick: () => { world?.dispose(); world = null; onClose(); } }, 'Close'))), // ha3d
     sidebar,
     h('main.canvas', plan, hint),
     h('aside.right', h('div.preview-wrap', previewHost, previewToggle), inspector),
@@ -151,11 +136,11 @@ export async function bootEditor(root) {
   let valid = null;
   function validate() {
     try {
-      valid = normalize(structuredClone(doc));
-      const linked = [...doc.lights, ...doc.acs].filter(isLinked).length;
+      valid = check(structuredClone(doc));
+      const linked = [...doc.lights, ...doc.acs, ...doc.entities].filter(isLinked).length;
       status.className = 'status';
-      status.replaceChildren(h('span.ok', '●'), ` ${doc.rooms.length} rooms · ${doc.lights.length} lights · ${doc.acs.length} ACs · `,
-        `${linked} linked to real devices`, dirty ? h('span.dirty', ' · unsaved changes') : '');
+      status.replaceChildren(h('span.ok', '●'), ` ${doc.rooms.length} rooms · ${doc.lights.length} lights · ${doc.entities.length} other devices · `,
+        `${linked} linked to Home Assistant`, dirty ? h('span.dirty', ' · unsaved changes') : '');
     } catch (e) {
       valid = null;
       status.className = 'status bad';
@@ -210,6 +195,7 @@ export async function bootEditor(root) {
     if (kind === 'room') return [item.name || item.id, `${fix(item.rect[2])} × ${fix(item.rect[3])} m`];
     if (kind === 'light') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
     if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.wall} wall`];
+    if (kind === 'entity') return [item.name || item.id, `${roomName(item.room)} · ${item.entity || 'no entity'}`];
     if (kind === 'furniture') return [item.type, roomName(roomAt(item.pos)?.id) || '—'];
     if (kind === 'opening') return [item.type || 'door', `${fix(Math.hypot(item.to[0] - item.from[0], item.to[1] - item.from[1]))} m`];
     return [item.name || item.id, `${Object.keys(item.lights || {}).length} rules`];
@@ -220,8 +206,7 @@ export async function bootEditor(root) {
 
   function renderSidebar() {
     const nodes = [h(`button.row.home-row${sel.kind === 'home' ? '.active' : ''}`, { onclick: () => select({ kind: 'home' }) },
-      icon('home', 15), h('span.row-name', 'Home settings')),
-    links.sidebarRow(sel.kind === 'connections' || sel.kind === 'service', () => select({ kind: 'connections' }))];
+      icon('home', 15), h('span.row-name', 'Home settings'))];
     for (const kind of Object.keys(KEYS)) {
       const items = doc[KEYS[kind]];
       nodes.push(h('div.group',
@@ -243,7 +228,7 @@ export async function bootEditor(root) {
   }
 
   function uniqueId(base) {
-    const ids = new Set([...doc.rooms, ...doc.lights, ...doc.acs, ...doc.scenes].map((x) => x.id));
+    const ids = new Set([...doc.rooms, ...doc.lights, ...doc.acs, ...doc.entities, ...doc.scenes].map((x) => x.id));
     if (!ids.has(base)) return base;
     for (let i = 2; ; i++) if (!ids.has(`${base}${i}`)) return `${base}${i}`;
   }
@@ -263,6 +248,9 @@ export async function bootEditor(root) {
     } else if (kind === 'ac') {
       if (!room) return toast('Add a room first', true);
       list.push({ id: uniqueId(`${room.id}.ac`), name: `${room.name} AC`, room: room.id, wall: 'north', pos: [center[0], room.rect[1]], y: 2.2 });
+    } else if (kind === 'entity') {
+      if (!room) return toast('Add a room first', true);
+      list.push({ id: uniqueId(`${room.id}.device`), name: 'New device', room: room.id, entity: '', pos: freeSpot(room, center), y: 1.2, icon: 'box', tap: 'more-info' });
     } else if (kind === 'furniture') {
       list.push({ type: 'sofa', pos: center, rot: 0 });
     } else if (kind === 'opening') {
@@ -297,6 +285,7 @@ export async function bootEditor(root) {
       // Devices cannot outlive their room.
       doc.lights = doc.lights.filter((l) => l.room !== gone.id);
       doc.acs = doc.acs.filter((a) => a.room !== gone.id);
+      doc.entities = doc.entities.filter((e) => e.room !== gone.id);
     }
     if (kind === 'light' || kind === 'ac' || kind === 'room') {
       const ids = new Set([...doc.lights, ...doc.acs].map((d) => d.id));
@@ -389,6 +378,15 @@ export async function bootEditor(root) {
       kids.push(g);
     });
 
+    doc.entities.forEach((e, i) => {
+      if (!Array.isArray(e.pos)) return;
+      kids.push(sv('g', {
+        class: `p-entity${isSel('entity', i) ? ' sel' : ''}${e.entity ? ' linked' : ''}`, 'data-kind': 'entity', 'data-index': i,
+        transform: `translate(${e.pos[0]} ${e.pos[1]})`,
+      }, big ? sv('circle', { r: 0.5, class: 'hit' }) : null,
+        sv('rect', { x: -0.17, y: -0.17, width: 0.34, height: 0.34, rx: 0.08, transform: 'rotate(45)' })));
+    });
+
     if (sel.kind === 'room' && doc.rooms[sel.index]) {
       const [x, z, w, d] = doc.rooms[sel.index].rect;
       if (big) kids.push(sv('circle', { cx: x + w, cy: z + d, r: 0.55, class: 'hit', 'data-kind': 'resize', 'data-index': sel.index }));
@@ -450,6 +448,7 @@ export async function bootEditor(root) {
       drag.riders = [
         ...doc.lights.filter((l) => l.room === item.id).map((o) => ({ o, pos: [...o.pos] })),
         ...doc.acs.filter((a) => a.room === item.id).map((o) => ({ o, pos: [...o.pos] })),
+        ...doc.entities.filter((e) => e.room === item.id && Array.isArray(e.pos)).map((o) => ({ o, pos: [...o.pos] })),
         ...doc.furniture.filter((f) => Array.isArray(f.pos) && inside(f.pos)).map((o) => ({ o, pos: [...o.pos] })),
       ];
       drag.openings = doc.openings.filter((o) => inside(o.from) && inside(o.to)).map((o) => ({ o, from: [...o.from], to: [...o.to] }));
@@ -492,7 +491,7 @@ export async function bootEditor(root) {
       snapAC(item, [px, pz]);
     } else {
       item.pos = [fix(drag.pos[0] + dx), fix(drag.pos[1] + dz)];
-      if (drag.kind === 'light') {
+      if (drag.kind === 'light' || drag.kind === 'entity') {
         const room = roomAt(item.pos);
         if (room) item.room = room.id;
       }
@@ -539,7 +538,7 @@ export async function bootEditor(root) {
   const row = (...fields) => h('div.fields', fields);
   const section = (title, ...nodes) => h('section.block', h('h3', title), nodes);
 
-  // Linking to a real device: links.deviceSection / links.sensorSection (connections.js).
+  // Linking to a Home Assistant entity: links.deviceSection / links.sensorSection (src/ha/editor-links.js).
   const linkHooks = { snapshot: () => snapshot(), changed: (note) => { touch(); if (note) toast(note); } };
 
   function renderInspector() {
@@ -553,7 +552,6 @@ export async function bootEditor(root) {
     if (kind === 'home') {
       head('Home', 'Global settings of this plan');
       doc.camera ||= { azimuth: 34, elevation: 47 };
-      if (isPhone) nodes.push(section('Real devices', links.sidebarRow(false, () => select({ kind: 'connections' }))));
       nodes.push(section('Building',
         row(bind('Wall height, m', number(0.1), { ...prop(doc, 'wallHeight', 2.6), parse: parseNum }),
           bind('Inner walls shown, m', number(0.05), { ...prop(doc, 'interiorWallHeight', 1.25), parse: parseNum })),
@@ -564,18 +562,9 @@ export async function bootEditor(root) {
         h('p.note', 'Walls facing the camera are cut away, so the azimuth decides which side of the home is open.')),
       section('How it works',
         h('p.note', isPhone
-          ? 'Tap anything on the plan, or find it under Items, to edit it. “Save” keeps the plan on this iPhone and sends it to your paired Mac. Coordinates are metres: x grows to the right (east), z grows downwards (south).'
-          : 'Pick anything on the plan or in the list to edit it. “Save & apply” writes the plan to disk and reloads the menu bar panel. Coordinates are metres: x grows to the right (east), z grows downwards (south).')));
-    } else if (kind === 'connections') {
-      head('Connections', 'Where your real lamps and air conditioners live');
-      if (isPhone) nodes.push(h('button.back-link', { onclick: () => select({ kind: 'home' }) }, icon('back', 14, 2.2), 'Home'));
-      nodes.push(...links.overview());
-    } else if (kind === 'service') {
-      nodes.push(h('button.back-link', { onclick: () => { links.stopPairing(); select({ kind: 'connections' }); } }, icon('back', 14, 2.2), 'Connections'));
-      nodes.push(h('div.insp-head.svc-head', links.tile(sel.service, 40),
-        h('div', h('h2', links.title(sel.service)), h('span', links.blurb(sel.service)))));
-      nodes.push(...[links.detail(sel.service, tuyaPanel)].flat());
-    } else if (!item) {
+          ? 'Tap anything on the plan, or find it under Items, to edit it. “Save” writes the plan into this card’s dashboard configuration. Coordinates are metres: x grows to the right (east), z grows downwards (south).'
+          : 'Pick anything on the plan or in the list to edit it. “Save & apply” writes the plan into this card’s dashboard configuration. Coordinates are metres: x grows to the right (east), z grows downwards (south).')));
+        } else if (!item) {
       head('Nothing selected');
       if (isPhone) nodes.push(h('p.note', 'Tap a room, a lamp or anything else on the plan.'));
     } else if (kind === 'room') {
@@ -627,6 +616,27 @@ export async function bootEditor(root) {
         h('p.note', 'Dragging the unit on the plan snaps it to the nearest wall of its room.')),
       links.deviceSection(item, 'ac', linkHooks),
       links.sensorSection(item, linkHooks));
+    } else if (kind === 'entity') {
+      head(item.name || item.id, `id: ${item.id}`);
+      const actions = [['more-info', 'Open Home Assistant’s dialog'], ['toggle', 'Toggle'], ['navigate', 'Go to a dashboard path']];
+      nodes.push(section('Device',
+        bind('Name', text(), prop(item, 'name', '')),
+        row(bind('Room', choice(doc.rooms.map((r) => [r.id, r.name || r.id])), { ...prop(item, 'room'), event: 'change' }),
+          bind('Icon', choice(ENTITY_ICONS), { ...prop(item, 'icon', 'box'), event: 'change' }))),
+      links.entitySection(item, linkHooks),
+      section('Position, m',
+        row(bind('X', number(), { ...at(item, 'pos', 0), parse: parseNum }), bind('Z', number(), { ...at(item, 'pos', 1), parse: parseNum })),
+        bind('Height', number(), { ...prop(item, 'y', 1.2), parse: parseNum })),
+      section('Actions',
+        bind('Tap', choice(actions), { ...prop(item, 'tap', 'more-info'), event: 'change' }),
+        bind('Touch and hold', choice(actions), { ...prop(item, 'hold', 'more-info'), event: 'change' }),
+        item.tap === 'navigate' || item.hold === 'navigate' ? bind('Path, e.g. /lovelace/climate', text(), optional(item, 'path')) : null,
+        bind('Show the temperature', h('input', { type: 'checkbox' }), {
+          get: () => item.show === 'temperature',
+          set: (on) => { if (on) item.show = 'temperature'; else delete item.show; },
+          event: 'change',
+        }),
+        h('p.note', 'Locks, alarms, covers, valves, sirens and cameras always open Home Assistant’s own dialog, whatever is chosen here.')));
     } else if (kind === 'furniture') {
       head(item.type, 'Decoration only');
       nodes.push(section('Furniture',
@@ -657,7 +667,8 @@ export async function bootEditor(root) {
       });
       const tri = () => choice([['', 'Leave as is'], ['on', 'On'], ['off', 'Off']]);
       nodes.push(section('Scene',
-        row(bind('Name', text(), prop(item, 'name', '')), bind('Icon', choice(SCENE_ICONS), { ...prop(item, 'icon', 'sun'), event: 'change' }))),
+        row(bind('Name', text(), prop(item, 'name', '')), bind('Icon', choice(SCENE_ICONS), { ...prop(item, 'icon', 'sun'), event: 'change' })),
+        links.runField(item, linkHooks)),
       section('Lights',
         bind('All lights (default)', tri(), { ...rule('*'), event: 'change' }),
         doc.lights.map((l) => bind(`${l.name} · ${roomName(l.room)}`, tri(), { ...rule(l.id), event: 'change' })),
@@ -674,8 +685,8 @@ export async function bootEditor(root) {
     const top = same ? inspector.scrollTop : 0;
     // A refresh of the same screen (devices arriving) keeps the field being typed in.
     const fields = () => [...inspector.querySelectorAll('input, select, textarea')];
-    const focused = same ? fields().indexOf(document.activeElement) : -1;
-    const caret = focused >= 0 ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+    const focused = same ? fields().indexOf(activeElement()) : -1;
+    const caret = focused >= 0 ? [activeElement().selectionStart, activeElement().selectionEnd] : null;
     inspector.dataset.key = key;
     inspector.replaceChildren(...nodes.flat(2).filter(Boolean));
     inspector.scrollTop = top;
@@ -686,163 +697,32 @@ export async function bootEditor(root) {
     }
   }
 
-  /* ---------- Smart Life ---------- */
-
-  let loginTimer = 0;
-  function stopLoginPolling() { clearInterval(loginTimer); loginTimer = 0; }
-
-  async function fetchDevices() {
-    tuya.busy = true; tuya.error = null;
-    if (sel.kind === 'service') renderInspector();
-    try {
-      tuya.devices = (await call('tuya.devices')).devices;
-    } catch (e) {
-      tuya.error = e.message;
-      tuya.devices = null;
-    }
-    tuya.busy = false;
-    renderSidebar();
-    if (sel.kind === 'service') renderInspector();
-  }
-
-  function deviceList() {
-    if (tuya.busy) return h('p.note', 'Talking to Smart Life…');
-    if (tuya.error) return h('p.note.bad', tuya.error);
-    if (!tuya.devices) return null;
-    if (!tuya.devices.length) return h('p.note.bad', 'Connected, but this account has no devices yet.');
-    const used = new Map([...doc.lights, ...doc.acs].filter((d) => d.tuya?.deviceId).map((d) => [d.tuya.deviceId, d.name]));
-    return h('div.devices-list', h('h3', `${tuya.devices.length} devices in your account`), tuya.devices.map((d) => h('div.device',
-      h(`span.dot${d.online ? '.on' : ''}`),
-      h('div', h('b', d.name), h('span', `${d.product || d.category || 'device'} · ${d.codes.join(', ') || 'no functions reported'}`)),
-      used.has(d.id) ? h('span.pill.on', used.get(d.id)) : null)));
-  }
-
-  function tuyaPanel() {
-    const nodes = [];
-    if (!isNative) nodes.push(h('p.note.bad', 'Connecting works inside the House Control app (this is the browser preview).'));
-
-    if (tuya.account.connected) {
-      nodes.push(section('Smart Life account',
-        h('div.device', h('span.dot.on'), h('div', h('b', tuya.account.account || 'Signed in'), h('span', `User Code ${tuya.account.userCode}`))),
-        h('div.fields',
-          h('button.btn', { onclick: fetchDevices }, 'Refresh devices'),
-          h('button.btn', { onclick: async () => {
-            stopLoginPolling();
-            tuya.account = await call('smartlife.signOut');
-            tuya.devices = null; tuya.qr = null;
-            renderSidebar(); renderInspector();
-            smartLifeChanged();
-          } }, 'Sign out')),
-        h('p.note', 'Pick a lamp or an AC on the plan, choose its device under “Smart Life device”, then press “Save & apply”.')),
-      deviceList());
-      if (!tuya.devices && !tuya.busy && !tuya.error && isNative) setTimeout(fetchDevices, 0);
-    } else {
-      const codeInput = text();
-      codeInput.value = tuya.account.userCode || '';
-      codeInput.placeholder = 'e.g. aB12cD3';
-      const message = h('p.note');
-      const qrBox = h('div.qr');
-      const start = async () => {
-        stopLoginPolling();
-        message.className = 'note';
-        message.textContent = 'Requesting a login code…';
-        qrBox.replaceChildren();
-        try {
-          const userCode = codeInput.value.trim();
-          const { token, qr } = await call('smartlife.begin', { userCode });
-          qrBox.replaceChildren(h('img', { src: qr, alt: 'Smart Life login QR code', width: 220, height: 220 }));
-          message.textContent = 'Scan this code with the Smart Life app (the scan icon on the Home tab) and confirm the login. Waiting…';
-          let tries = 0;
-          loginTimer = setInterval(async () => {
-            if (++tries > 90) { stopLoginPolling(); message.className = 'note bad'; message.textContent = 'The code expired. Press “Show QR code” again.'; return; }
-            const r = await call('smartlife.poll', { token, userCode }).catch(() => null);
-            if (!r?.connected) return;
-            stopLoginPolling();
-            tuya.account = r.info;
-            renderSidebar();
-            renderInspector();
-            smartLifeChanged();
-          }, 2000);
-        } catch (e) {
-          message.className = 'note bad';
-          message.textContent = e.message;
-        }
-      };
-      nodes.push(section('Sign in with the Smart Life app',
-        h('ol.steps',
-          h('li', 'In the Smart Life app open Me → ⚙ Settings → Account and Security and copy the User Code at the bottom.'),
-          h('li', 'Type it here and press “Show QR code”.'),
-          h('li', 'Scan the code with the Smart Life app and confirm.')),
-        h('label.field', h('span', 'User Code'), codeInput),
-        h('button.btn.primary.wide', { onclick: start, disabled: !isNative }, 'Show QR code'),
-        qrBox, message,
-        h('p.note', 'Free and needs no Tuya developer account: this is the same sign-in the Home Assistant integration uses. The session is stored only on this Mac.')));
-    }
-
-    // The developer-project route stays available for those who already have one.
-    const idInput = text();
-    idInput.value = tuya.info.accessId || '';
-    idInput.placeholder = 'Access ID / Client ID';
-    const secretInput = h('input', { type: 'password', autocomplete: 'off' });
-    secretInput.placeholder = tuya.info.hasSecret ? '•••••••• (saved — leave empty to keep)' : 'Access Secret / Client Secret';
-    const region = choice(REGIONS.map(([id, label]) => [id, `${label} (${id})`]));
-    region.value = tuya.info.region || 'eu';
-    const saveCloud = async () => {
-      try {
-        tuya.info = await call('tuya.save', { accessId: idInput.value, accessSecret: secretInput.value, region: region.value });
-        renderSidebar();
-        smartLifeChanged();
-        if (tuya.info.configured) await fetchDevices(); else renderInspector();
-      } catch (e) { toast(e.message, true); }
-    };
-    nodes.push(h('details.advanced', h('summary', 'Advanced: Tuya Cloud project instead'),
-      h('p.note', 'Only if you already have a project on platform.tuya.com with your app account linked. The QR sign-in above takes priority when both are set.'),
-      h('label.field', h('span', 'Access ID'), idInput),
-      h('label.field', h('span', 'Access Secret'), secretInput),
-      h('label.field', h('span', 'Data center'), region),
-      h('button.btn.wide', { onclick: saveCloud, disabled: !isNative }, 'Save & fetch devices'),
-      tuya.account.connected ? null : deviceList()));
-    return nodes;
-  }
-
   /* ---------- file actions ---------- */
 
   async function save() {
     if (!valid) return;
-    if (!isNative) {
-      download();
-      toast('Browser preview: the plan was downloaded instead of applied');
-      return;
-    }
     try {
-      await call('savePlan', { config: doc });
+      const note = await onSave(structuredClone(doc));
       dirty = false;
       validate();
       haptic('success');
-      toast(isPhone ? 'Saved' : 'Saved — the menu bar panel now shows this home');
+      toast(note || 'Saved');
     } catch (e) {
       toast(e.message, true);
     }
   }
 
-  function download() {
-    const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })), download: `${slug(doc.name)}.json` });
+  // ha3d: a download made in the browser; nothing leaves the device.
+  function exportPlan() {
+    const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })), download: `${slug(doc.name)}.plan.json` });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  async function exportPlan() {
-    if (!isNative) { download(); return; }
-    try {
-      const r = await call('exportPlan', { config: doc });
-      if (r.ok) toast('Plan exported');
-    } catch (e) { toast(e.message, true); }
-  }
-
-  async function importPlan() {
+  function importPlan() {
     const load = (json) => {
       try {
-        normalize(structuredClone(json));
+        check(structuredClone(json));
       } catch (e) {
         toast(`Not a valid plan: ${e.message}`, true);
         return;
@@ -853,15 +733,8 @@ export async function bootEditor(root) {
       nameInput.value = doc.name || 'Home';
       sel = { kind: 'home' };
       touch();
-      toast('Plan imported — review it and press “Save & apply”');
+      toast('Plan imported — review it and press “Save”');
     };
-    if (isNative) {
-      try {
-        const r = await call('importPlan');
-        if (r.config) load(r.config);
-      } catch (e) { toast(e.message, true); }
-      return;
-    }
     const input = h('input', { type: 'file', accept: 'application/json,.json' });
     input.addEventListener('change', async () => {
       try { load(JSON.parse(await input.files[0].text())); } catch (e) { toast(`Could not read the file: ${e.message}`, true); }
@@ -872,7 +745,7 @@ export async function bootEditor(root) {
   /* ---------- keyboard ---------- */
 
   window.addEventListener('keydown', (ev) => {
-    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
+    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(activeElement()?.tagName || '');
     if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z' && !typing) {
       ev.preventDefault();
       if (ev.shiftKey) stepHistory(redo, undo); else stepHistory(undo, redo);
@@ -895,7 +768,7 @@ export async function bootEditor(root) {
       if (ev.key === 'ArrowDown') target[1] = fix(target[1] + stepSize);
       touch();
     }
-  });
+  }, { signal });
 
   /* ---------- iPhone ---------- */
 
@@ -918,6 +791,7 @@ export async function bootEditor(root) {
     const view3d = tool('box', '3D', () => setShow3D(!ui.show3D));
     const tools = h('nav.p-tools',
       tool('plus', 'Add', () => openModal(addSheet)),
+      tool('download', 'Export', exportPlan),
       tool('list', 'Items', () => openModal(listSheet)),
       view3d,
       tool('home', 'Home', () => { select({ kind: 'home' }); setSheet('full'); }));
@@ -927,7 +801,7 @@ export async function bootEditor(root) {
     sidebar.classList.add('p-list');
     listSheet.append(h('div.p-modal-head', h('b', 'Items'), h('button.p-text', { onclick: closeModals }, 'Done')), sidebar);
     const addables = [
-      ['room', 'home', 'Room'], ['light', 'bulb', 'Lamp'], ['ac', 'ac', 'Air conditioner'],
+      ['room', 'home', 'Room'], ['light', 'bulb', 'Lamp'], ['ac', 'ac', 'Air conditioner'], ['entity', 'box', 'Other device'],
       ['opening', 'opening', 'Door or window'], ['furniture', 'furniture', 'Furniture'], ['scene', 'sparkles', 'Scene'],
     ];
     addSheet.append(h('div.p-modal-head', h('b', 'Add to the plan'), h('button.p-text', { onclick: closeModals }, 'Cancel')),
@@ -935,7 +809,7 @@ export async function bootEditor(root) {
         onclick: () => { closeModals(); add(kind); haptic('light'); ui.reveal(); },
       }, icon(name, 24, 1.8), h('span', label)))));
     confirmSheet.append(h('div.p-modal-head', h('b', 'Unsaved changes')),
-      h('p.note', 'Save them before closing? Saved plans reach your paired Mac too.'),
+      h('p.note', 'Save them into this card before closing?'),
       h('div.p-confirm-actions',
         h('button.btn.primary.wide', { onclick: async () => { closeModals(); await save(); if (!dirty) close(); } }, 'Save and close'),
         h('button.btn.wide.danger', { onclick: () => { closeModals(); dirty = false; close(); } }, 'Discard changes'),
@@ -955,7 +829,7 @@ export async function bootEditor(root) {
       sheet.dataset.state = next;
       shell.dataset.sheet = next;
       sheet.style.height = '';
-      document.activeElement?.blur?.();
+      activeElement()?.blur?.();
     }
     let gripDrag = null;
     const startGrip = (ev) => {
@@ -966,12 +840,13 @@ export async function bootEditor(root) {
     inspector.addEventListener('pointerdown', (ev) => { if (ev.target.closest('.insp-head')) startGrip(ev); });
     window.addEventListener('pointermove', (ev) => {
       if (!gripDrag || ev.pointerId !== gripDrag.id) return;
+      // ha3d: the listener goes away with the editor (signal)
       const dy = ev.clientY - gripDrag.y;
       if (!gripDrag.moved && Math.abs(dy) < 6) return;
       gripDrag.moved = true;
       sheet.classList.add('dragging');
       sheet.style.height = `${Math.max(80, gripDrag.h - dy)}px`;
-    });
+    }, { signal });
     const endGrip = (ev) => {
       if (!gripDrag || ev.pointerId !== gripDrag.id) return;
       const { moved, h: from } = gripDrag;
@@ -983,8 +858,8 @@ export async function bootEditor(root) {
       if (now < Math.min(from, screen * 0.42) * 0.7) closeSheet();
       else setSheet(now > screen * 0.62 ? 'full' : 'peek');
     };
-    window.addEventListener('pointerup', endGrip);
-    window.addEventListener('pointercancel', endGrip);
+    window.addEventListener('pointerup', endGrip, { signal });
+    window.addEventListener('pointercancel', endGrip, { signal });
 
     function closeSheet() {
       setSheet('closed');
@@ -1007,7 +882,7 @@ export async function bootEditor(root) {
     function requestClose() {
       if (dirty) openModal(confirmSheet); else close();
     }
-    function close() { post('close'); }
+    function close() { world?.dispose(); world = null; onClose(); }
 
     function setShow3D(on) {
       ui.show3D = on;
@@ -1132,8 +1007,7 @@ export async function bootEditor(root) {
       // Something was picked (on the plan, in the list, in 3D): its details come up.
       selected(next) {
         closeModals();
-        if (next.kind === 'connections' || next.kind === 'service') setSheet('full');
-        else if (next.kind !== 'home' && ui.sheet === 'closed') setSheet('peek');
+        if (next.kind !== 'home' && ui.sheet === 'closed') setSheet('peek');
       },
       // The item just added may lie outside what is shown: show everything again.
       reveal() { ui.view = null; ui.applyView(); },
@@ -1157,7 +1031,7 @@ export async function bootEditor(root) {
         issue.classList.toggle('show', !valid);
       },
     };
-    setSheet(sel.kind === 'connections' || sel.kind === 'service' ? 'full' : 'closed');
+    setSheet('closed');
     phone = ui;
   }
 
@@ -1168,22 +1042,9 @@ export async function bootEditor(root) {
   dirty = false;
   validate();
   schedulePreview(0);
-  // A plan saved on the other device (the Mac, or the paired iPhone) while this editor is open.
-  incoming.planArrived = (config, from) => {
-    if (dirty) {
-      toast(`${from || 'Your other device'} saved a newer plan. Saving here replaces it.`, true);
-      return;
-    }
-    doc = structuredClone(config);
-    for (const key of Object.values(KEYS)) doc[key] ||= [];
-    nameInput.value = doc.name || 'Home';
-    if (sel.index != null && !doc[KEYS[sel.kind]]?.[sel.index]) sel = { kind: 'home' };
-    touch();
-    dirty = false;
-    validate();
-    toast(`Updated from ${from || 'your other device'}`);
+  // ha3d: the host closes the editor through this (its own close button, the card leaving the page).
+  return {
+    dispose() { clearTimeout(previewTimer); world?.dispose(); world = null; },
+    get dirty() { return dirty; },
   };
-
-  window.__editor = { get doc() { return doc; }, select, tuya, links, phone };
-  post('ready');
 }

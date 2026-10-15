@@ -1,6 +1,4 @@
-import { post, call, isNative } from './bridge.js';
-
-const STORAGE_KEY = 'house-control:state:v1';
+import { post } from './bridge.js';
 
 export const AC_MODES = ['cool', 'heat', 'dry', 'fan', 'auto'];
 export const AC_FANS = ['auto', 'low', 'medium', 'high', 'turbo'];
@@ -19,7 +17,10 @@ function defaultAC(cfg, outdoor) {
   };
 }
 
-export function createStore(config) {
+// ha3d: `transmit(kind, id, patch, state)` sends a change to the device and returns a promise
+// that rejects when the device refuses it (see src/ha/bridge.js). `canWrite(kind, id)` keeps
+// local changes away from a device that is unavailable or missing in Home Assistant.
+export function createStore(config, { transmit: send = null, canWrite = null } = {}) {
   const listeners = new Set();
   const lightCfg = new Map(config.lights.map((l) => [l.id, l]));
   const acCfg = new Map(config.acs.map((a) => [a.id, a]));
@@ -30,32 +31,13 @@ export function createStore(config) {
   // What each real AC can do, as reported by the native side. A simulated AC can do everything.
   const features = {};
 
-  let restored = false;
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && saved.home === config.name) {
-      for (const [id, s] of Object.entries(saved.lights || {})) if (state.lights[id]) Object.assign(state.lights[id], s);
-      for (const [id, s] of Object.entries(saved.acs || {})) if (state.acs[id]) Object.assign(state.acs[id], s);
-      for (const [id, f] of Object.entries(saved.features || {})) if (state.acs[id]) features[id] = f;
-      state.scene = saved.scene || null;
-      restored = true;
-    }
-  } catch { /* storage unavailable: start from defaults */ }
-
-  let saveTimer = 0;
-  function persist() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ home: config.name, ...state, features }));
-      } catch { /* ignore */ }
-    }, 200);
-  }
+  // ha3d: no state is kept in localStorage. Home Assistant is the source of truth: every
+  // linked device takes its state from hass.states as soon as the card gets it.
+  const restored = false;
 
   function emit(change) {
     for (const fn of listeners) fn(change);
     if (change.type !== 'tick') {
-      persist();
       post('summary', summary());
       // The native shell passes this on to its other views of the same home (the panel
       // and the island each run their own store), which adopt it without re-sending.
@@ -70,9 +52,9 @@ export function createStore(config) {
   const outbox = new Map();
 
   function transmit(kind, id, patch) {
-    if (!isNative) return Promise.resolve();
+    if (!send) return Promise.resolve();
     const current = kind === 'light' ? state.lights[id] : state.acs[id];
-    const sent = call('command', { kind, id, patch, state: { ...current } });
+    const sent = Promise.resolve().then(() => send(kind, id, patch, { ...current }));
     // Never let a lost reply block the device for good.
     return Promise.race([sent, new Promise((resolve) => setTimeout(resolve, 20000))]);
   }
@@ -129,6 +111,7 @@ export function createStore(config) {
   function writeLight(id, patch, { remote = false } = {}) {
     const cur = state.lights[id];
     if (!cur) return false;
+    if (!remote && canWrite && !canWrite('light', id)) return false; // ha3d
     const clean = sanitizeLight(id, patch);
     // Only what actually changed is worth sending to the device.
     const diff = Object.fromEntries(Object.entries(clean).filter(([k, v]) => cur[k] !== v));
@@ -143,6 +126,7 @@ export function createStore(config) {
     const cur = state.acs[id];
     const cfg = acCfg.get(id);
     if (!cur) return false;
+    if (!remote && canWrite && !canWrite('ac', id)) return false; // ha3d
     const clean = { ...patch };
     if ('target' in clean) clean.target = clamp(Math.round(clean.target), cfg.min, cfg.max);
     const diff = Object.fromEntries(Object.entries(clean).filter(([k, v]) => cur[k] !== v));
@@ -247,7 +231,7 @@ export function createStore(config) {
 
   // Without real sensors the room temperature is simulated: it drifts towards the
   // set-point while an AC runs and back towards the outdoor-ish ambient when it is off.
-  setInterval(() => {
+  const simulation = setInterval(() => {
     let any = false;
     for (const [id, a] of Object.entries(state.acs)) {
       const cfg = acCfg.get(id);
@@ -258,8 +242,10 @@ export function createStore(config) {
       const next = Math.abs(goal - a.roomTemp) <= step ? goal : a.roomTemp + Math.sign(goal - a.roomTemp) * step;
       if (next !== a.roomTemp) { a.roomTemp = Math.round(next * 10) / 10; any = true; }
     }
-    if (any) { for (const fn of listeners) fn({ type: 'tick' }); persist(); }
+    if (any) for (const fn of listeners) fn({ type: 'tick' });
   }, 3000);
+  // ha3d: the card is created and destroyed often; stop the timer with it.
+  store.dispose = () => { clearInterval(simulation); listeners.clear(); };
 
   return store;
 }

@@ -31,7 +31,11 @@ function acTemperatureColor(target, cfg) {
   return tmp.set('#1c4fc0').lerp(new THREE.Color('#8a3d12'), t).clone();
 }
 
-export function createPanel(root, config, store, { onFocus, onMenu }) {
+// ha3d: extra hooks for the Home Assistant card (all optional):
+//   onScene(scene)        runs a scene instead of store.applyScene (scenes with `run`)
+//   entityTile(cfg)       builds the tile of a plan `entities` item: { el, cfg, kind: 'entity', update }
+//   availability(kind,id) null, or why the device cannot be used right now ('Unavailable', 'Not found')
+export function createPanel(root, config, store, { onFocus, onMenu, onScene = null, entityTile = null, availability = () => null }) {
   const { state } = store;
   const ui = { room: 'all', sheet: null };
   let world = null;
@@ -44,9 +48,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
   const homeSub = h('div.home-sub');
   const power = h('button.round.power', { title: 'Everything on / off', 'aria-label': 'Toggle everything', onclick: toggleEverything }, icon('power', 21, 2.2));
   const gear = h('button.round', { title: 'Floor plan', 'aria-label': 'Floor plan menu', onclick: () => onMenu(gear) }, icon('settings', 17));
-  // Shown while an AI assistant has a link to this home (AI Access on the Mac).
-  const aiBadge = h('button.ai-badge', { hidden: true, title: 'An AI assistant has access — click to manage', 'aria-label': 'AI access',
-    onclick: () => onMenu(aiBadge, 'agent') }, icon('sparkles', 13, 2.2), h('span', 'AI'));
+  // ha3d: the AI Access badge is gone together with AI Access itself.
 
   const scenes = h('div.scenes');
   const rooms = h('div.rooms');
@@ -68,7 +70,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     h('header.top',
       h('div.home', h('div.home-badge', icon('home', 17)),
         h('div', h('div.home-name', config.name), homeSub)),
-      aiBadge, gear, power),
+      gear, power),
     tooltip, panel, sheet, toastEl);
   const card = h('div.card.booting', h('div.notch'), clip);
   root.replaceChildren(card);
@@ -77,7 +79,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
 
   const sceneButtons = new Map();
   for (const s of config.scenes) {
-    const b = h('button.scene', { onclick: () => { haptic('medium'); store.applyScene(s.id); } }, icon(s.icon, 19), s.name);
+    const b = h('button.scene', { onclick: () => { haptic('medium'); if (onScene) onScene(s); else store.applyScene(s.id); } }, icon(s.icon, 19), s.name);
     sceneButtons.set(s.id, b);
     scenes.append(b);
   }
@@ -145,6 +147,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     let gesture = null;
     el.addEventListener('pointerdown', (ev) => {
       if (ev.target.closest('.tile-more') || ev.button !== 0) return;
+      if (availability('light', cfg.id)) return; // ha3d: an unavailable lamp does nothing
       el.setPointerCapture(ev.pointerId);
       const s = state.lights[cfg.id];
       gesture = { x: ev.clientX, y: ev.clientY, start: s.on ? s.brightness : 0, moved: false, step: null };
@@ -186,13 +189,16 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     el.addEventListener('pointerup', finish);
     el.addEventListener('pointercancel', finish);
     el.addEventListener('keydown', (ev) => {
-      if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); toggleLight(cfg.id); }
+      if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); if (!availability('light', cfg.id)) toggleLight(cfg.id); }
     });
 
     return {
       el, cfg, kind: 'light',
       update() {
         const s = state.lights[cfg.id];
+        const missing = availability('light', cfg.id); // ha3d
+        el.classList.toggle('unavailable', Boolean(missing));
+        if (missing) { el.classList.remove('on'); el.style.setProperty('--level', '0'); sub.textContent = missing; return; }
         el.classList.toggle('on', s.on);
         el.style.setProperty('--c', css(lightColor(s, tmp)));
         el.style.setProperty('--level', s.on ? String(s.brightness) : '0');
@@ -212,7 +218,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
       const s = state.acs[cfg.id];
       store.setAC(cfg.id, { on: true, target: s.target + d });
     };
-    const el = h('div.tile.ac', { role: 'button', tabindex: 0, 'aria-label': cfg.name, onclick: () => openSheet({ kind: 'ac', id: cfg.id }) },
+    const el = h('div.tile.ac', { role: 'button', tabindex: 0, 'aria-label': cfg.name, onclick: () => { if (!availability('ac', cfg.id)) openSheet({ kind: 'ac', id: cfg.id }); } },
       bubble,
       h('div.tile-text', h('div.tile-name', cfg.name), sub),
       h('div.stepper',
@@ -226,6 +232,9 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
       el, cfg, kind: 'ac',
       update() {
         const s = state.acs[cfg.id];
+        const missing = availability('ac', cfg.id); // ha3d
+        el.classList.toggle('unavailable', Boolean(missing));
+        if (missing) { el.classList.remove('on'); sub.textContent = missing; value.textContent = '–'; return; }
         el.classList.toggle('on', s.on);
         el.style.setProperty('--c', MODE_COLORS[s.mode]);
         if (shownMode !== s.mode) { bubble.replaceChildren(icon(s.mode, 19)); shownMode = s.mode; }
@@ -237,6 +246,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
 
   for (const cfg of config.acs) tiles.set(cfg.id, acTile(cfg));
   for (const cfg of config.lights) tiles.set(cfg.id, lightTile(cfg));
+  if (entityTile) for (const cfg of config.entities || []) tiles.set(cfg.id, entityTile(cfg)); // ha3d
 
   function toggleLight(id) {
     haptic('light');
@@ -255,6 +265,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
       if (ui.room === 'all') nodes.push(h('div.group-label', room.name));
       devices.filter((t) => t.kind === 'ac').forEach(add);
       devices.filter((t) => t.kind === 'light').forEach(add);
+      devices.filter((t) => t.kind === 'entity').forEach(add); // ha3d
     }
     if (!nodes.length) nodes.push(h('div.group-label', 'No devices in this room yet'));
     else if (isPhone && config.lights.some((l) => l.capabilities.length && inScope(l))) {
@@ -468,7 +479,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
   function hideTooltip() { tooltip.classList.remove('show'); }
 
   function showTooltip(hit) {
-    if (!hit) { hideTooltip(); return; }
+    if (!hit || (hit.kind !== 'light' && hit.kind !== 'ac')) { hideTooltip(); return; } // ha3d: entities have no tooltip
     let name;
     let status;
     let on;
@@ -545,10 +556,12 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     card.style.setProperty('--mood', m);
   }
 
-  store.on(() => update());
-  window.addEventListener('keydown', (ev) => {
+  const unsubscribe = store.on(() => update());
+  // ha3d: removed again by dispose() when the card leaves the page.
+  const onKey = (ev) => {
     if (ev.key === 'Escape' && !closeSheet()) onMenu(null, 'escape');
-  });
+  };
+  window.addEventListener('keydown', onKey);
 
   layoutTiles();
   update();
@@ -564,7 +577,8 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     toggleLight,
     get room() { return ui.room; },
     setNotch(x) { card.style.setProperty('--notch-x', `${x}px`); },
-    setAgentLive(live) { aiBadge.hidden = !live; },
+    refresh: update, // ha3d: Home Assistant state of a plan entity changed
+    dispose() { unsubscribe(); window.removeEventListener('keydown', onKey); clearTimeout(toastEl.timer); }, // ha3d
     /** `ai`: something an AI assistant did (who, what), instead of an error. */
     toast(text, ai = null) {
       toastEl.replaceChildren(...(ai ? [h('span.toast-ai', icon('sparkles', 13, 2.2), ai), h('span', text)] : [text]));
