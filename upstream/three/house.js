@@ -118,10 +118,10 @@ export function buildHouse(config, camDir) {
     const type = s.opening?.type;
 
     if (near) {
-      if (type !== 'door') piece(s, a, b, 0, CURB, t);
+      if (type !== 'door' && type !== 'garage') piece(s, a, b, 0, CURB, t); // ha3d: garage
       continue;
     }
-    if (type === 'door' || type === 'open') continue;
+    if (type === 'door' || type === 'open' || type === 'garage') continue; // ha3d: a garage door is drawn by src/ha/live.js
 
     const height = exterior ? H : Hi;
     if (type === 'window' && exterior) {

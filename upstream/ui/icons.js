@@ -9,7 +9,7 @@ import {
   List, Trash2, Scan, Redo2, Map as MapIcon, DoorClosed, Armchair,
   // ha3d: devices from Home Assistant
   Lock, LockOpen, Warehouse, Speaker, Blinds, Gauge, Siren, Bell, Music, WashingMachine, Car, Coffee, Droplet,
-  Gamepad2, Monitor, Heater, Shield, Upload, Play, Bot, Waves, ToggleRight,
+  Gamepad2, Monitor, Heater, Shield, Upload, Play, Bot, Waves, ToggleRight, Layers, ChevronUp,
 } from 'lucide';
 
 const ICONS = {
@@ -31,7 +31,7 @@ const ICONS = {
   lock: Lock, unlock: LockOpen, garage: Warehouse, speaker: Speaker, blinds: Blinds, sensor: Gauge, siren: Siren,
   bell: Bell, music: Music, washer: WashingMachine, car: Car, coffee: Coffee, water: Droplet, gamepad: Gamepad2,
   monitor: Monitor, heater: Heater, alarm: Shield, upload: Upload, play: Play, robot: Bot, pool: Waves,
-  switch: ToggleRight, thermometer: Thermometer, lightbulb: Lightbulb, 'ceiling-fan': Fan,
+  switch: ToggleRight, thermometer: Thermometer, lightbulb: Lightbulb, 'ceiling-fan': Fan, layers: Layers, up: ChevronUp,
 };
 
 // ha3d: the raw lucide drawing ([tag, attributes] pairs), for icons painted on a canvas in the 3D view.

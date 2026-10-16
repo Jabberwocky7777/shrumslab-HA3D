@@ -32,14 +32,85 @@ the south wall.
 | `interiorWallHeight` | `1.25` | How much of the inner walls is drawn |
 | `outdoorTemp` | `27` | Only used to simulate the room temperature of an AC with nothing linked |
 | `camera` | `{ "azimuth": 34, "elevation": 47 }` | Default view; the walls facing the camera are cut away |
+| `floors` | one floor | The storeys of the house, see [`floors`](#floors-new-in-this-card) |
+
+## `floors` (new in this card)
+
+A house with more than one storey lists them under `floors`. Each room then says which floor it is
+on with `storey` (the room's `floor` is still its floor *finish*: `oak`, `tile`...). Rooms on
+different floors may overlap in x/z: a basement can lie right under the main floor.
+
+```json
+"floors": [
+  { "id": "main", "name": "Main", "level": 0,
+    "actions": [
+      { "id": "on",    "name": "Lights on", "icon": "sun",  "run": "script.your_lights_on" },
+      { "id": "off",   "name": "All off",   "icon": "moon", "builtin": "all_off" },
+      { "id": "movie", "name": "Movie",     "icon": "film", "run": "scene.your_movie" }
+    ] },
+  { "id": "basement", "name": "Basement", "level": -1, "height": 2.4 }
+],
+"rooms": [
+  { "id": "living", "name": "Living", "rect": [0, 0, 6, 4.5], "floor": "oak", "storey": "main" },
+  { "id": "bar",    "name": "Bar",    "rect": [0, 0, 6.4, 4.4], "floor": "walnut", "storey": "basement" }
+]
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `id`, `name` | | A unique id and the name on the floor switcher |
+| `level` | its place in the list | `0` is the ground floor, `-1` a basement, `1` the floor above. Floors are drawn and listed by level |
+| `height` | the plan's `wallHeight` | Wall height of this floor |
+| `actions` | All on, All off | The floor's buttons, shown first in the scenes row while the floor is selected |
+
+Without `floors` a plan has one floor and looks exactly as before; a room may then not have a
+`storey`. With `floors`, every room needs one. Lights, ACs and entities are on their room's floor.
+
+**Furniture and openings** have no room, so they take an optional `storey` too. Without one they go
+on the floor whose rooms they stand in or lie on; where floors overlap, on the **first floor in the
+`floors` list**. Give the ones on the other floor a `storey` (the editor does this for you).
+
+**Floor buttons** (`actions`) have an `id`, a `name`, an `icon` (`sun`, `moon`, `power`, `bright`,
+`dim`, `film`, `tv`, `sofa`, `bed`, `door`, `home`, `sparkles`, `music`, `coffee`, `fan`, `table`)
+and exactly one of:
+
+- `"run": "script.…"` or `"scene.…"`: starts it with `script.turn_on` / `scene.turn_on`. Nothing
+  else may be run.
+- `"builtin": "all_on"` or `"all_off"`: switches **this floor's** plan lights. Like every bulk
+  action it only ever reaches `light` and `switch` entities, never a lock, cover or other sensitive
+  device.
+
+A floor without `actions` (or with `[]`) gets All on and All off for its own lights.
+
+In the card, the floor switcher sits above the room tabs (it is hidden with a single floor). The
+room tabs, tiles, the list's All on / All off and the header's light count follow the selected
+floor; the header adds the whole house's count. The layers button next to the floors draws every
+floor one above the other, the others dimmed; tapping a room on another floor there selects that
+floor. The card option `stacked_view_default: true` starts in that view.
 
 ## `rooms`, `openings`, `furniture`
 
 | Section | Fields |
 | --- | --- |
-| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (`oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. Optional `tab` (see below). |
-| `openings` | `type` (`door`, `window`, `open`), `from: [x, z]`, `to: [x, z]` on one wall line (same x or same z), windows also `sill`, `head` |
+| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (the finish: `oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. Optional `tab` (see below), `storey` when the plan has `floors`, and `area`: the Home Assistant area id the room stands for (set by **Import from Home Assistant…**). |
+| `openings` | `type` (`door`, `window`, `open`, `garage`), `from: [x, z]`, `to: [x, z]` on one wall line (same x or same z), windows also `sill`, `head`. Optional `storey`, and `contact`, `lock`, `cover` (see [below](#what-the-house-is-doing-new-in-this-card)) |
 | `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet`, and the extra models below |
+
+### Starting from Home Assistant
+
+In the plan editor, **Add → From Home Assistant** (or **From Home Assistant…** on a computer) reads
+Home Assistant's floors, areas, devices and entities and shows what it would add, with a box for each:
+
+- a floor for each Home Assistant floor, by its level (areas on no floor go on "Other areas");
+- a room for each area, laid out in a grid on its floor, with `"area"` set: drag them into place;
+- every `light.*` in an area as a light in that room (ticked);
+- `switch.*` entities whose name or device name sounds like a lamp (unticked);
+- `climate`, `media_player`, `fan`, `lock` and `cover` entities as devices (unticked).
+
+**Add what's missing** keeps the plan and adds only what it does not have: entities it already uses
+are skipped, and an area whose room is already there (by `area`, or by name) gets no second room.
+**Start a new plan** builds one from scratch. Nothing is saved until you press Save in the editor.
+Hidden entities and diagnostic or configuration entities are left out.
 
 ### Room tabs
 
@@ -88,13 +159,14 @@ optional; the defaults are in brackets.
 | `pos`, `y`, `rot`, `length` | Position, height, rotation, length of a strip or pendant bar |
 | `points` | `cans` and `sconce` only: several fixtures on one switch, see below |
 | `capabilities` | Any of `brightness`, `temp`, `color`. **Leave it out** for a linked light and the card works it out from the entity's `supported_color_modes`. `[]` means on/off only |
+| `tap_action`, `hold_action`, `double_tap_action` | Optional: Home Assistant actions instead of the usual tap to toggle and hold for the sheet (see [Actions](#actions)) |
 | `link` | `{ "service": "homeassistant", "id": "light.your_light" }`. Only `light.*` and `switch.*` entities; a `switch.*` is always on/off only |
 
 ### Extra light types
 
 | `type` | What it is | Options |
 | --- | --- | --- |
-| `fan` | Ceiling fan with a bowl light; the light entity drives the bowl | `y`, `blades` (colour) |
+| `fan` | Ceiling fan with a bowl light; the light entity drives the bowl | `y`, `blades` (colour), `fan` (a `fan.*`: the blades spin with it) |
 | `pendantBar` | A bar with two dome shades, e.g. over a pool table or an island | `length` (1.3, along x), `shade` (colour), `y` (1.55) |
 | `dome` | Flush dome ceiling light | `y` |
 | `cans` | Recessed ceiling cans on one switch | `points: [[x, z], ...]` |
@@ -143,7 +215,10 @@ a small glowing icon in the 3D view and a tile under its room.
 ```json
 "entities": [
   { "id": "media.tv", "name": "TV", "room": "media", "entity": "media_player.your_tv",
-    "pos": [1.2, 3.4], "y": 1.3, "icon": "tv", "tap": "more-info" },
+    "pos": [1.2, 3.4], "y": 1.3, "icon": "tv",
+    "hold_action": { "action": "perform-action", "perform_action": "media_player.media_play_pause",
+                     "target": { "entity_id": "media_player.your_tv" }, "confirmation": { "text": "Play or pause?" } },
+    "double_tap_action": { "action": "toggle" } },
   { "id": "bar.thermostat", "name": "Thermostat", "room": "bar", "entity": "climate.your_thermostat",
     "pos": [6.9, 7.5], "y": 1.5, "icon": "thermometer", "tap": "more-info", "show": "temperature" }
 ]
@@ -155,18 +230,96 @@ a small glowing icon in the 3D view and a tile under its room.
 | `entity` | | The Home Assistant entity id |
 | `pos`, `y` | `y`: `1.2` | Where the icon floats |
 | `icon` | from the domain | `tv`, `thermometer`, `fan`, `lock`, `garage`, `blinds`, `door`, `camera`, `speaker`, `music`, `plug`, `switch`, `sensor`, `alarm`, `siren`, `water`, `heater`, `robot`, `car`, `coffee`, `washer`, `monitor`, `gamepad`, `pool`, `bell`, `box`... |
-| `tap` | `more-info` | `more-info` (Home Assistant's own dialog), `toggle` (only `light`, `switch`, `fan`, `media_player`) or `navigate` |
-| `hold` | `more-info` | Touch and hold the tile: same choices |
-| `path` | | For `navigate`: a dashboard path such as `/lovelace/climate` |
+| `tap_action` | `{ "action": "more-info" }` | What a tap does: a Home Assistant action, see [Actions](#actions) |
+| `hold_action` | `{ "action": "more-info" }` | Touch and hold the tile |
+| `double_tap_action` | none | A double tap. Without one a single tap acts at once; with one it waits a moment for the second tap |
+| `tap`, `hold`, `path` | | The older short form, still accepted: `"tap": "more-info"`, `"toggle"` or `"navigate"` with `"path": "/lovelace/climate"`. A `tap_action` wins over `tap` |
 | `show` | | `temperature`: show `current_temperature` on the icon (climate entities) |
+
+### Actions
+
+`tap_action`, `hold_action` and `double_tap_action` are Home Assistant's own action objects, run by
+Home Assistant itself (so confirmations look and work as on its own cards). Supported:
+
+| `action` | Fields |
+| --- | --- |
+| `more-info` | Optional `entity` (another entity's dialog) |
+| `toggle` | Only `light`, `switch`, `fan`, `media_player` entities |
+| `navigate` | `navigation_path`, starting with `/` |
+| `perform-action` | `perform_action` (`"light.turn_on"`), optional `target`, `data` (`call-service` / `service` are accepted too) |
+| `none` | Nothing happens |
+
+Any of them can have a `confirmation`: `true`, or `{ "text": "Sure?" }`. `url`, `assist` and
+`fire-dom-event` are not available. A `perform-action` may not use a sensitive domain's service
+(`lock.unlock`, `cover.open_cover`...), may not target a sensitive entity in `target.entity_id` or
+`data.entity_id`, and a cross-domain service (`homeassistant.turn_on`...) may not target an area,
+device, floor or label, which could hold a lock or cover.
 
 ### Sensitive devices
 
 `lock`, `alarm_control_panel`, `cover` (every cover), `valve`, `siren` and `camera` entities are
-never one-tap. Tapping one **always** opens Home Assistant's more-info dialog, which asks for codes
-and confirmations itself. A plan that gives one of them `tap: toggle` (or `hold: toggle`) is refused.
+never one-tap. Tapping, holding or double-tapping one **always** opens Home Assistant's more-info
+dialog, which asks for codes and confirmations itself, whatever its actions say. A plan that gives one
+of them `toggle` or `perform-action` is refused.
 They can't be plan lights or ACs either, so no scene, "All on", "All off" or the power button ever
 reaches them: bulk actions only change `light`, `switch`, `fan`, `climate` and `media_player`.
+
+## What the house is doing (new in this card)
+
+All of these are optional. They tie parts of the model to sensors, so the 3D view shows what is
+going on. A plan without them looks exactly as before.
+
+### Doors, windows, locks and garage doors
+
+```json
+"openings": [
+  { "type": "door", "from": [11.6, 8.2], "to": [12.6, 8.2],
+    "contact": "binary_sensor.your_front_door", "lock": "lock.your_front_door" },
+  { "type": "window", "from": [0, 7.0], "to": [0, 7.9], "contact": "binary_sensor.your_window" },
+  { "type": "garage", "from": [8.2, 10.2], "to": [10.2, 10.2], "head": 2.0, "cover": "cover.your_garage_door" }
+]
+```
+
+| Field | On | What you see |
+| --- | --- | --- |
+| `contact` | doors, windows | A `binary_sensor.*`. While it is `on` (open) a door's leaf swings open and turns the alert colour; a window turns the alert colour |
+| `lock` | doors, garage doors | A `lock.*`, drawn as a lock on the door: green when locked, the alert colour when unlocked, jammed or open |
+| `type: "garage"` with `cover` | | A garage door that rolls up and down with the `cover.*` (its `current_position`, else open / closed) |
+
+Tapping a lock or a garage door always opens Home Assistant's more-info dialog: they are sensitive
+devices.
+
+### Rooms: occupancy and temperature
+
+| Field | Meaning |
+| --- | --- |
+| `occupancy` | A `binary_sensor.*` or a list of them. While any is `on` the room's floor glows softly; the glow fades out over a few seconds after they are all off |
+| `temperature` | A `sensor.*` with the room's temperature. Its reading shows on the room's tab, and the **Heat map** button at the end of the room tabs tints every room from cool blue to warm red |
+
+### People
+
+```json
+"people": [
+  { "name": "Alex", "entity": "sensor.your_alex_area", "color": "#7ac8ff" }
+]
+```
+
+The entity's state is a Home Assistant area id or name (from a Bermuda, ESPresense or template
+sensor, for example). The person shows as a coloured dot with their initial in the room whose `area`
+(or name) matches, on that room's floor. When the state matches no room they are hidden; when it is
+`not_home` the header says they are away. `color` defaults to light blue.
+
+### Fans, TVs and power
+
+| Where | Field | Meaning |
+| --- | --- | --- |
+| a light of type `fan` | `fan` | A `fan.*`: the blades spin with its `percentage` and stop when it is off |
+| an entity | `fan` | A plan entity whose entity is a `fan.*` spins its icon; `fan` can name another fan |
+| `tv` / `mediaWall` furniture | `entity` | A `media_player.*`: the screen glows while it plays or is paused, showing its picture when Home Assistant serves one itself (its own signed address, never another site). Tapping the screen opens more-info |
+| a light | `power` | A `sensor.*` in W or kW, shown on the light's tile while it is on: "100% · 18 W" |
+
+The card options `power` (the house's total, shown in the header) and `sun: true` (the 3D view
+blends from night to a daylight look with `sun.sun`'s elevation) go with these.
 
 ## `scenes`
 
@@ -175,14 +328,18 @@ reaches them: bulk actions only change `light`, `switch`, `fan`, `climate` and `
 | `id`, `name`, `icon` | The button (`sun`, `sofa`, `film`, `moon`, `door`, `table`, `bed`, `tv`, `sparkles`) |
 | `lights` | Light id → `on`, `brightness`, `temp`, `color`. The key `"*"` applies to every light |
 | `acs` | AC id → `on`, `target`, `mode`, `fan` |
-| `run` | **New:** a `script.*` or `scene.*` entity to start instead. Such a scene changes nothing else and is never shown as active |
+| `run` | **New:** a `script.*` or `scene.*` entity to start instead. Such a scene changes nothing else |
+| `active_when` | **New**, with `run` only: `{ "entity": "input_boolean.your_guest_mode", "state": "on" }`, or a list of these that must all match. The button shows as active while they do |
 
-A built-in scene lights up as active until something changes; one with `run` doesn't, because only
-Home Assistant knows what the script did.
+A built-in scene lights up as active until something changes. One with `run` lights up only while its
+`active_when` matches, because only Home Assistant knows what the script did; without `active_when` it
+never does. Floor buttons with `run` take `active_when` the same way.
 
 ## Checks
 
 The card refuses a plan that doesn't add up and says why: unknown rooms, duplicate ids, openings that
 aren't axis-aligned, malformed entity ids, a sensitive entity with `toggle`, a `run` that isn't a
-script or scene. A linked entity that doesn't exist (yet) in Home Assistant is only a warning: its
+script or scene, a room on an unknown floor, a floor button with both or neither of `run` and
+`builtin`, an action that would reach a sensitive device, a sensor of the wrong domain (a `contact`
+that is not a `binary_sensor.*`, a garage door without its `cover`...). A linked entity that doesn't exist (yet) in Home Assistant is only a warning: its
 tile says "Not found".

@@ -9,7 +9,7 @@ const room = demo.rooms[0].id;
 
 test('the demo plan is valid', () => {
   const { config, warnings } = validatePlan(demo);
-  assert.equal(config.rooms.length, 9);
+  assert.equal(config.rooms.length, 12);
   assert.equal(config.entities.length, 7);
   assert.deepEqual(warnings, []);
 });

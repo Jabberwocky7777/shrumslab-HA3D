@@ -36,9 +36,21 @@ function acTemperatureColor(target, cfg) {
 //   entityTile(cfg)       builds the tile of a plan `entities` item: { el, cfg, kind: 'entity', update }
 //   availability(kind,id) null, or why the device cannot be used right now ('Unavailable', 'Not found')
 //   tempUnit              '°C' (default) or '°F', shown on the AC sheet
-export function createPanel(root, config, store, { onFocus, onMenu, onScene = null, entityTile = null, availability = () => null, tempUnit = '°C' }) {
+//   floor                 the floor shown first (src/ha/floors.js); every room has a `storey`
+//   floorBar              an element shown above the room tabs (the floor switcher), or null
+//   floorActions(floorId) the floor's buttons for the scenes row: [{ id, name, icon, run(), active() }]
+//   lightAction(cfg, g)   a light's own tap_action / hold_action / double_tap_action: true when it ran one
+//   sceneActive(scene)    true / false for a scene with `run` (its active_when), or null: upstream's rule
+//   headerExtra()         more under the home's name (house power, who is away): nodes or strings
+//   roomNote(roomId)      a short reading on a room's tab ("21.5°"), or null
+//   lightNote(cfg, on)    more on a light's tile ("18 W"), or null
+//   roomsTrailer          an element at the end of the room tabs (the heat map toggle), or null
+export function createPanel(root, config, store, { onFocus, onMenu, onScene = null, entityTile = null, availability = () => null, tempUnit = '°C', floor = null, floorBar = null, floorActions = () => [], lightAction = () => false, sceneActive = () => null, headerExtra = () => [], roomNote = () => null, lightNote = () => null, roomsTrailer = null }) {
   const { state } = store;
-  const ui = { room: 'all', sheet: null };
+  const ui = { room: 'all', sheet: null, floor }; // ha3d: floor
+  const roomFloor = new Map(config.rooms.map((r) => [r.id, r.storey ?? null])); // ha3d
+  const onFloor = (cfg) => !ui.floor || roomFloor.get(cfg.room) === ui.floor; // ha3d
+  const floorName = () => config.floors?.find((f) => f.id === ui.floor)?.name; // ha3d
   let world = null;
   const roomName = new Map(config.rooms.map((r) => [r.id, r.name]));
 
@@ -56,7 +68,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   const listTitle = h('span.title');
   const grid = h('div.grid');
   const panel = h('section.panel',
-    scenes, rooms,
+    scenes, floorBar, rooms, // ha3d: floorBar
     h('div.list-head', listTitle,
       h('button.pill', { onclick: () => bulk(true) }, 'All on'),
       h('button.pill', { onclick: () => bulk(false) }, 'All off')),
@@ -84,7 +96,17 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     sceneButtons.set(s.id, b);
     scenes.append(b);
   }
-  if (!config.scenes.length) scenes.style.display = 'none';
+  // ha3d: the selected floor's own buttons come first in the scenes row.
+  let actionButtons = [];
+  function renderFloorActions() {
+    for (const { b } of actionButtons) b.remove();
+    actionButtons = floorActions(ui.floor).map((a) => ({
+      a, b: h('button.scene.floor-action', { 'data-action': a.id, onclick: () => { haptic('medium'); a.run(); } }, icon(a.icon, 19), a.name),
+    }));
+    scenes.prepend(...actionButtons.map(({ b }) => b));
+    scenes.style.display = scenes.children.length ? '' : 'none';
+  }
+  renderFloorActions();
 
   /* ---------- rooms ---------- */
 
@@ -94,9 +116,24 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   const tabbed = config.rooms.filter((r) => (typeof r.tab === 'boolean' ? r.tab : used.has(r.id)));
   for (const r of [{ id: 'all', name: 'All' }, ...tabbed]) {
     const count = h('span.count.zero', '0');
-    const b = h('button.room', { onclick: () => { haptic('tick'); selectRoom(r.id); } }, r.name, count);
-    roomButtons.set(r.id, { b, count });
+    const reading = h('span.reading'); // ha3d: roomNote
+    const b = h('button.room', { onclick: () => { haptic('tick'); selectRoom(r.id); } }, r.name, reading, count);
+    roomButtons.set(r.id, { b, count, reading });
     rooms.append(b);
+  }
+  if (roomsTrailer) rooms.append(roomsTrailer); // ha3d
+  for (const [rid, { b }] of roomButtons) b.hidden = rid !== 'all' && Boolean(ui.floor) && roomFloor.get(rid) !== ui.floor; // ha3d
+
+  // ha3d: show one floor: its room tabs, tiles and buttons.
+  function selectFloor(id) {
+    if (id === ui.floor) return;
+    ui.floor = id;
+    ui.room = 'all';
+    for (const [rid, { b }] of roomButtons) b.hidden = rid !== 'all' && roomFloor.get(rid) !== ui.floor;
+    renderFloorActions();
+    layoutTiles();
+    update();
+    onFocus(null);
   }
 
   function selectRoom(id) {
@@ -109,13 +146,13 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   }
 
   function inScope(cfg) {
-    return ui.room === 'all' || cfg.room === ui.room;
+    return onFloor(cfg) && (ui.room === 'all' || cfg.room === ui.room); // ha3d: floor
   }
 
   function bulk(on) {
     haptic('medium');
-    if (ui.room === 'all') { store.setAllLights(on); return; }
-    for (const l of config.lights) if (l.room === ui.room) store.setLight(l.id, { on });
+    if (ui.room === 'all' && config.floors?.length <= 1) { store.setAllLights(on); return; }
+    for (const l of config.lights) if (inScope(l)) store.setLight(l.id, { on }); // ha3d: this floor
   }
 
   function toggleEverything() {
@@ -156,13 +193,13 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
       const s = state.lights[cfg.id];
       gesture = { x: ev.clientX, y: ev.clientY, start: s.on ? s.brightness : 0, moved: false, step: null };
       el.classList.add('pressed');
-      if (isPhone && hasSheet) {
+      if ((isPhone && hasSheet) || cfg.hold_action) { // ha3d: hold_action
         gesture.hold = setTimeout(() => {
           if (!gesture || gesture.moved) return;
           gesture = null;
           el.classList.remove('pressed');
           haptic('medium');
-          openSheet({ kind: 'light', id: cfg.id });
+          if (!lightAction(cfg, 'hold')) openSheet({ kind: 'light', id: cfg.id }); // ha3d
         }, 420);
       }
     });
@@ -182,13 +219,20 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
         store.setLight(cfg.id, b < 0.04 ? { on: false } : { on: true, brightness: b });
       }
     });
+    // ha3d: a light's own tap_action / double_tap_action, else upstream's toggle
+    let tapTimer = 0;
+    const tap = () => {
+      if (!cfg.double_tap_action) { if (!lightAction(cfg, 'tap')) toggleLight(cfg.id); return; }
+      if (tapTimer) { clearTimeout(tapTimer); tapTimer = 0; lightAction(cfg, 'double_tap'); return; }
+      tapTimer = setTimeout(() => { tapTimer = 0; if (!lightAction(cfg, 'tap')) toggleLight(cfg.id); }, 250);
+    };
     const finish = (ev) => {
       if (!gesture) return;
       const tapped = !gesture.moved && ev.type === 'pointerup';
       clearTimeout(gesture.hold);
       gesture = null;
       el.classList.remove('pressed', 'dragging');
-      if (tapped) toggleLight(cfg.id);
+      if (tapped) tap(); // ha3d
     };
     el.addEventListener('pointerup', finish);
     el.addEventListener('pointercancel', finish);
@@ -208,6 +252,8 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
         el.style.setProperty('--level', s.on ? String(s.brightness) : '0');
         // On a phone the group heading above the tile already names the room.
         sub.textContent = ui.room === 'all' && !isPhone ? `${lightStatus(cfg, s)} · ${roomName.get(cfg.room)}` : lightStatus(cfg, s);
+        const note = lightNote(cfg, s.on); // ha3d: power
+        if (note) sub.textContent += ` · ${note}`;
       },
     };
   }
@@ -263,6 +309,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     let i = 0;
     const add = (t) => { t.el.style.setProperty('--i', i++); nodes.push(t.el); };
     for (const room of config.rooms) {
+      if (ui.floor && roomFloor.get(room.id) !== ui.floor) continue; // ha3d
       if (ui.room !== 'all' && room.id !== ui.room) continue;
       const devices = [...tiles.values()].filter((t) => t.cfg.room === room.id);
       if (!devices.length) continue;
@@ -535,24 +582,36 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     const acsOn = Object.values(state.acs).filter((a) => a.on);
     const anyOn = onCount > 0 || acsOn.length > 0;
 
+    // ha3d: with several floors the count is the shown floor's, and the house's comes after it.
+    const multi = config.floors?.length > 1;
+    const floorLights = multi ? config.lights.filter(onFloor).map((l) => state.lights[l.id]) : lights;
+    const floorOn = floorLights.filter((l) => l.on).length;
     homeSub.replaceChildren(
       h('span.live', { style: anyOn ? {} : { background: 'rgba(255,255,255,.25)', boxShadow: 'none' } }),
-      h('b', onCount ? `${onCount} of ${lights.length}` : 'No'), ' lights on',
-      acsOn.length ? ` · AC ${acsOn[0].target}°` : '');
+      h('b', floorOn ? `${floorOn} of ${floorLights.length}` : 'No'), ' lights on',
+      multi ? h('span.house-count', ` · ${onCount} in house`) : null,
+      acsOn.length ? ` · AC ${acsOn[0].target}°` : '',
+      ...headerExtra()); // ha3d
     power.classList.toggle('on', anyOn);
 
-    for (const [id, b] of sceneButtons) b.classList.toggle('active', state.scene === id);
+    for (const [id, b] of sceneButtons) {
+      const own = sceneActive(config.scenes.find((x) => x.id === id)); // ha3d: active_when
+      b.classList.toggle('active', own ?? state.scene === id);
+    }
+    for (const { a, b } of actionButtons) b.classList.toggle('active', Boolean(a.active?.())); // ha3d
 
-    for (const [id, { b, count }] of roomButtons) {
+    for (const [id, { b, count, reading }] of roomButtons) {
       b.classList.toggle('active', ui.room === id);
-      const n = config.lights.filter((l) => (id === 'all' || l.room === id) && state.lights[l.id].on).length;
+      if (reading) reading.textContent = roomNote(id) || ''; // ha3d
+      const n = config.lights.filter((l) => (id === 'all' ? onFloor(l) : l.room === id) && state.lights[l.id].on).length; // ha3d: floor
       count.textContent = n;
       count.classList.toggle('zero', n === 0 || id === 'all');
     }
 
     const scoped = config.lights.filter(inScope);
     const scopedOn = scoped.filter((l) => state.lights[l.id].on).length;
-    listTitle.replaceChildren(h('b', ui.room === 'all' ? 'Whole home' : roomName.get(ui.room)), ` · ${scopedOn} of ${scoped.length} on`);
+    const whole = config.floors?.length > 1 ? floorName() : 'Whole home'; // ha3d
+    listTitle.replaceChildren(h('b', ui.room === 'all' ? whole : roomName.get(ui.room)), ` · ${scopedOn} of ${scoped.length} on`);
 
     for (const t of tiles.values()) t.update();
     sheetView?.update();
@@ -578,6 +637,8 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     openSheet,
     closeSheet,
     selectRoom,
+    selectFloor, // ha3d
+    get floor() { return ui.floor; }, // ha3d
     toggleLight,
     get room() { return ui.room; },
     setNotch(x) { card.style.setProperty('--notch-x', `${x}px`); },

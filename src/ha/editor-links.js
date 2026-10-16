@@ -83,13 +83,29 @@ export function createEditorLinks(getHass) {
         }));
     },
 
-    /** A scene that runs a Home Assistant script or scene instead of setting lights. */
-    runField(item, hooks) {
-      return entityField('Runs (script.* or scene.*, optional)', {
+    /** A door's or window's contact sensor, a door's lock, a garage door's cover. */
+    openingSection(item, hooks) {
+      const opt = (key) => ({ get: () => item[key] || '', set: (v) => { if (v) item[key] = v; else delete item[key]; } });
+      const type = item.type || 'door';
+      return h('section.block', h('h3', 'Home Assistant'),
+        type === 'garage'
+          ? entityField('Garage door (cover)', { ...opt('cover'), domains: new Set(['cover']), hooks, empty: 'Pick the cover.* of the garage door.' })
+          : null,
+        type !== 'open' ? entityField('Contact sensor (optional)', { ...opt('contact'), domains: new Set(['binary_sensor']), hooks, empty: 'None: the door is drawn as an opening.' }) : null,
+        type === 'door' || type === 'garage' ? entityField('Lock (optional)', { ...opt('lock'), domains: new Set(['lock']), hooks, empty: 'None.' }) : null,
+        h('p.note', 'Tapping a lock or a garage door always opens Home Assistant’s own dialog.'));
+    },
+
+    /**
+     * A scene that runs a Home Assistant script or scene instead of setting lights. `required`:
+     * a floor button set to "run" keeps an empty `run` (the plan then says what is missing).
+     */
+    runField(item, hooks, { required = false } = {}) {
+      return entityField(required ? 'Script or scene to run' : 'Runs (script.* or scene.*, optional)', {
         get: () => item.run || '',
-        set: (v) => { if (v) item.run = v; else delete item.run; },
+        set: (v) => { if (v || required) item.run = v; else delete item.run; },
         domains: RUN_DOMAINS,
-        empty: 'Empty: the scene sets the lights below.',
+        empty: required ? 'Pick a script.* or scene.* entity.' : 'Empty: the scene sets the lights below.',
         hooks,
         placeholder: 'script.your_script',
       });

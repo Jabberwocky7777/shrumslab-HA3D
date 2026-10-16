@@ -141,7 +141,7 @@ export const extraBuilders = {
       at(box(width - 0.06, 0.006, 0.005, mat('#000'), { r: 0 }), 0, 0.4, 0.226),
       at(box(1.0, 0.07, 0.1, mat('#16171a', { rough: 0.6 }), { r: 0.02 }), 0, 0.68, 0.05),
       at(box(screen + 0.02, sh + 0.02, 0.03, mat(BLACK, { rough: 0.35 }), { r: 0.006 }), 0, 1.0, -0.2),
-      at(box(screen - 0.02, sh - 0.02, 0.008, scr, { r: 0 }), 0, 1.02, -0.184),
+      Object.assign(at(box(screen - 0.02, sh - 0.02, 0.008, scr, { r: 0 }), 0, 1.02, -0.184), { name: 'screen' }), // ha3d: lit by a media player
     );
   },
 
@@ -475,15 +475,19 @@ export const extraFixtures = {
   fan(cfg, H) {
     const y = cfg.y ?? H - 0.35;
     const blade = mat(cfg.blades || '#3a2c22', { rough: 0.7 });
+    // ha3d: the blades turn together (src/ha/live.js spins them with a fan entity)
+    const blades = new THREE.Group();
+    blades.name = 'fan-blades';
     const parts = [
       at(cyl(0.015, 0.015, H - y - 0.12, mat(DARK), 8), 0, y + 0.12, 0),
       at(cyl(0.11, 0.13, 0.12, mat(DARK, { rough: 0.4, metal: 0.4 }), 24), 0, y + 0.02, 0),
+      blades,
     ];
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2;
       const b = at(box(0.62, 0.012, 0.13, blade, { r: 0.006 }), Math.cos(a) * 0.42, y + 0.08, Math.sin(a) * 0.42);
       b.rotation.y = -a;
-      parts.push(b);
+      blades.add(b);
     }
     const bowl = at(sphere(0.15, glowMaterial(), 24), 0, y - 0.02, 0);
     bowl.scale.y = 0.55;

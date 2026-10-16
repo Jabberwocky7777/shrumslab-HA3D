@@ -2,9 +2,12 @@
 // openings...) plus the Home Assistant rules of brief section 3.8.
 import { normalize, ConfigError } from '../../upstream/config.js';
 import {
-  domainOf, isSensitive, LIGHT_DOMAINS, AC_DOMAINS, RUN_DOMAINS, TOGGLE_DOMAINS, TAP_ACTIONS,
+  domainOf, isSensitive, LIGHT_DOMAINS, AC_DOMAINS, RUN_DOMAINS, TAP_ACTIONS, actionProblem,
 } from './sensitive.js';
+import { normalizeActiveWhen } from './conditions.js';
+import { applyLiveFields } from './live-fields.js';
 import { defaultIcon } from './mapping.js';
+import { applyFloors } from './floors.js';
 
 export { ConfigError };
 
@@ -24,15 +27,36 @@ export function haLink(device) {
   return device?.link?.service === 'homeassistant' && device.link.id ? device.link.id : null;
 }
 
-function checkAction(what, entity, action, path) {
-  if (action == null) return;
-  need(TAP_ACTIONS.includes(action), `${what} has unknown action "${action}" (use ${TAP_ACTIONS.join(', ')})`);
-  if (action === 'toggle') {
-    need(!isSensitive(entity), `${what}: "${entity}" is a sensitive device and cannot be toggled with a tap; use "more-info"`);
-    need(TOGGLE_DOMAINS.has(domainOf(entity)),
-      `${what}: "toggle" only works for ${[...TOGGLE_DOMAINS].join(', ')} entities; use "more-info" for "${entity}"`);
+const GESTURES = ['tap', 'hold', 'double_tap'];
+
+// The old strings ("tap": "toggle", "hold": "navigate" with "path") as Home Assistant action objects.
+function legacyAction(what, value, path) {
+  if (value == null) return null;
+  need(TAP_ACTIONS.includes(value), `${what} has unknown action "${value}" (use ${TAP_ACTIONS.join(', ')})`);
+  if (value === 'navigate') {
+    need(typeof path === 'string' && path.startsWith('/'), `${what} needs a "path" starting with "/" to navigate to`);
+    return { action: 'navigate', navigation_path: path };
   }
-  if (action === 'navigate') need(typeof path === 'string' && path.startsWith('/'), `${what} needs a "path" starting with "/" to navigate to`);
+  return { action: value };
+}
+
+/**
+ * The tap_action / hold_action / double_tap_action of a plan entity or light, as Home Assistant
+ * action objects. `item.tap` / `item.hold` (strings) still work; the objects win over them.
+ */
+function gestureActions(what, item, entity) {
+  const out = {};
+  for (const g of GESTURES) {
+    const key = `${g}_action`;
+    let cfg = item[key];
+    if (cfg != null) need(cfg && typeof cfg === 'object' && !Array.isArray(cfg), `${what} ${key} must be an object such as { "action": "more-info" }`);
+    else cfg = g === 'double_tap' ? null : legacyAction(g === 'tap' ? what : `${what} (hold)`, item[g], item.path);
+    if (!cfg) continue;
+    const problem = actionProblem(entity, cfg);
+    need(!problem, `${what} ${key}: ${problem}`);
+    out[key] = cfg.action === 'call-service' ? { ...cfg, action: 'perform-action' } : cfg;
+  }
+  return out;
 }
 
 /**
@@ -43,6 +67,11 @@ function checkAction(what, entity, action, path) {
 export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
   const config = normalize(structuredClone(raw));
   raw.rooms.forEach((r) => need(r.tab == null || typeof r.tab === 'boolean', `Room "${r.id}" has a "tab" that is not true or false`));
+  // ha3d: the Home Assistant area a room stands for (set by "Import from Home Assistant…")
+  raw.rooms.forEach((r, i) => {
+    need(r.area == null || (typeof r.area === 'string' && r.area), `Room "${r.id}" has an "area" that is not an area id`);
+    config.rooms[i].area = r.area ?? null;
+  });
   // Temperatures in the plan (AC ranges, scene targets, outdoorTemp) are in Home Assistant's unit.
   config.tempUnit = unit === '°F' ? '°F' : '°C';
   if (config.tempUnit === '°F' && raw.outdoorTemp == null) config.outdoorTemp = 80;
@@ -52,6 +81,7 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
   const exists = (entity, what) => {
     if (states && !states[entity]) warnings.push(`${what}: "${entity}" was not found in Home Assistant`);
   };
+  applyFloors(raw, config, { exists }); // floors, and the storey of every room, opening and furniture item
 
   config.lights.forEach((l, i) => {
     const rawLight = raw.lights[i];
@@ -62,6 +92,7 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
         `Light "${l.id}" point #${k + 1} must be [x, z] or [x, z, rotation]`));
     }
     l.autoCapabilities = !('capabilities' in rawLight); // ha3d: worked out from supported_color_modes
+    Object.assign(l, gestureActions(`Light "${l.id}"`, rawLight, haLink(l))); // optional overrides of tap / hold
     if (!l.link && !l.tuya) return;
     const entity = haLink(l);
     if (!entity) {
@@ -103,8 +134,7 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
     need(isEntityId(e.entity), `${what} needs "entity": a Home Assistant entity id such as "media_player.your_tv"`);
     need(isPoint(e.pos), `${what} needs "pos": [x, z]`);
     need(e.y == null || Number.isFinite(e.y), `${what} has a "y" that is not a number`);
-    checkAction(what, e.entity, e.tap, e.path);
-    checkAction(`${what} (hold)`, e.entity, e.hold, e.path);
+    const actions = gestureActions(what, e, e.entity);
     need(e.show == null || e.show === 'temperature', `${what} has unknown "show" (only "temperature" is supported)`);
     exists(e.entity, what);
     return {
@@ -112,15 +142,17 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
       name: e.name || e.id,
       y: e.y ?? 1.2,
       icon: e.icon || defaultIcon(e.entity, states?.[e.entity]),
-      tap: e.tap || 'more-info',
-      hold: e.hold || 'more-info',
+      tap_action: actions.tap_action || { action: 'more-info' },
+      hold_action: actions.hold_action || { action: 'more-info' },
+      double_tap_action: actions.double_tap_action || null,
     };
   });
   const entityIds = new Set(config.entities.map((e) => e.entity));
 
   const lightIds = new Set(config.lights.map((l) => l.id));
   const acIds = new Set(config.acs.map((a) => a.id));
-  config.scenes.forEach((s) => {
+  config.scenes.forEach((s, i) => {
+    s.activeWhen = normalizeActiveWhen(`Scene "${s.id}"`, raw.scenes[i].active_when, { hasRun: s.run != null, exists });
     if (s.run != null) {
       need(isEntityId(s.run) && RUN_DOMAINS.has(domainOf(s.run)), `Scene "${s.id}": "run" may only be a script.* or scene.* entity, not "${s.run}"`);
       exists(s.run, `Scene "${s.id}"`);
@@ -138,6 +170,7 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
     }
   });
 
+  applyLiveFields(raw, config, { exists }); // sensors, locks, garage doors, people, fans, TVs, power
   return { config, warnings };
 }
 

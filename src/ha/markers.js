@@ -13,7 +13,7 @@ export const MARKER_COLORS = {
   unavailable: '#3a3f4c',
 };
 
-function drawIcon(g, name, color) {
+export function drawIcon(g, name, color) {
   g.save();
   g.strokeStyle = color;
   g.lineWidth = 2;

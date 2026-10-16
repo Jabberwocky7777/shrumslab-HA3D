@@ -1,38 +1,57 @@
-# House Control 3D for Home Assistant
+# House Control 3D
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
-[![Release](https://img.shields.io/github/v/release/Jabberwocky7777/shrumslab-HA3D)](https://github.com/Jabberwocky7777/shrumslab-HA3D/releases/latest)
+[![HACS Custom][hacs-badge]][hacs-url] [![Release][release-badge]][release-url] [![Downloads][downloads-badge]][release-url] [![Home Assistant][ha-badge]][ha-url] [![CI][ci-badge]][ci-url] [![License][license-badge]](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/LICENSE)
 
-A Lovelace card that shows your home as a 3D model: lights that glow when they're on, scene
-buttons, room filters and light tiles you tap to toggle and drag to dim. It is the web UI of
+![House Control 3D: the card and its plan editor](https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/hero.png)
+
+**Your home as a live 3D model, right in your Home Assistant dashboard.** Lights glow when they're
+on, and you tap to toggle and drag to dim. It is the web UI of
 [house-control](https://github.com/0xProbabillity/house-control) (iPhone layout), with its native
-device bridge replaced by Home Assistant. It's made to be the main dashboard in the Home Assistant
-phone app.
+device bridge replaced by Home Assistant, and it's made to be the main dashboard in the Home
+Assistant phone app.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/demo.png" width="320" alt="The demo house in the card">
-  <img src="https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/editor.png" width="320" alt="The plan editor">
-</p>
+## ✨ Features
 
-- **3D model** from a simple floor plan (rooms, doors, windows, furniture), lit by your real lights.
-- **Lights**: tap to toggle, drag sideways to dim, touch and hold for brightness, white and colour.
+- 🏠 **3D model** from a simple floor plan (rooms, doors, windows, furniture), lit by your real lights.
+- 🏢 **Several floors**: a floor switcher, per-floor buttons (scripts, scenes, All on / All off) and a
+  stacked view of the whole house.
+- 💡 **Lights**: tap to toggle, drag sideways to dim, touch and hold for brightness, white and colour.
   State updates live from Home Assistant (wall switches, automations, other dashboards).
-- **Other devices** (TV, thermostat, fan, lock, garage door, camera...) as glowing icons and tiles
+- 📺 **Other devices** (TV, thermostat, fan, lock, garage door, camera...) as glowing icons and tiles
   that open Home Assistant's own dialogs.
-- **Scenes**: house-control's light scenes, or buttons that run a Home Assistant script or scene.
-- **Visual editor** for admins, saved straight into the dashboard. Import and export as a file.
-- **Private by design**: the plan never goes in `/config/www`, nothing is loaded from the internet,
+- 🎬 **Scenes**: house-control's light scenes, or buttons that run a Home Assistant script or scene.
+- ✏️ **Visual editor** for admins, saved straight into the dashboard. Import and export as a file.
+  The card's options have Home Assistant's own editor too, with an **Edit home…** button.
+- 🚪 **The house as it is**: doors swing open with their sensors, locks show on doors, garage doors
+  roll, occupied rooms glow, people stand in their room, a heat map, spinning fans, TVs that light up
+  with what's playing, power readings and daylight from the sun.
+- 🏗️ **Start from Home Assistant**: the editor can build a plan (or fill in the current one) from
+  your floors, areas, lights and devices; you only drag the rooms into place.
+- 👆 **Home Assistant actions**: `tap_action`, `hold_action` and `double_tap_action` on devices
+  (and lights), run by Home Assistant itself, confirmations included.
+- 🎨 **Follows your theme** (panel colours, corner radius) and **reduced motion**.
+- 🔒 **Private by design**: the plan never goes in `/config/www`, nothing is loaded from the internet,
   no tokens. See [Privacy](#privacy).
+
+| Every floor at once | The house as it is |
+| :---: | :---: |
+| ![The stacked view: the basement lit under the dimmed main floor](https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/stacked.png) | ![Heat map, an open front door, an unlocked lock and the garage door half open](https://raw.githubusercontent.com/Jabberwocky7777/shrumslab-HA3D/main/docs/images/live.png) |
 
 ## Install
 
 ### HACS (recommended)
 
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Jabberwocky7777/shrumslab-HA3D`,
-   type **Dashboard**.
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Jabberwocky7777&repository=shrumslab-HA3D&category=plugin)
+
+Click the button above, or by hand:
+
+1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Jabberwocky7777/shrumslab-HA3D`, type **Dashboard**.
 2. Find **House Control 3D** in HACS and download it. HACS adds the dashboard resource
    (under `/hacsfiles/`) for you.
 3. Reload the browser (or restart the app).
+
+New versions show up in HACS as an update; the card's version is logged in the browser console
+(`HOUSE-CONTROL-CARD x.y.z`).
 
 ### By hand
 
@@ -49,6 +68,8 @@ The card is designed to fill a **panel** view.
 2. Open it, **✎ Edit** → the view's ✎ → **View type: Panel (single card)**.
 3. **Add card** → search for **House Control 3D**. It starts with the demo house.
 4. Replace the demo plan with yours: in the visual editor (below), by importing a plan file, or in YAML.
+   The card's own editor (✎ on the card) sets the options below and has **Edit home…**; it shows
+   a summary of the plan, never the plan itself as a form.
 
 ```yaml
 type: custom:house-control-card
@@ -63,11 +84,29 @@ plan:
       type: ceiling
       pos: [3, 2.2]
       link: { service: homeassistant, id: light.your_light }
-# optional
-height: 100%        # CSS height of the card; the default fills the view under the header
-safe_area: false    # true: keep clear of the phone's notch (for a kiosk view without header)
-temperature_unit: F # F or C; the default is Home Assistant's own unit system
 ```
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `plan` | the demo house | The floor plan: rooms, lights, devices and scenes. See [the plan](#the-plan). |
+| `height` | fills the view | CSS height of the card, e.g. `100%` or `800px`. |
+| `safe_area` | `false` | `true` keeps clear of the phone's notch, for a kiosk view without a header. |
+| `temperature_unit` | Home Assistant's | `F` or `C`. |
+| `stacked_view_default` | `false` | `true` starts a plan with several floors in the stacked view. |
+| `quality` | `medium` | `low`, `medium` or `high`: how many real lights and shadows the 3D view uses (see below). |
+| `sun` | `false` | `true`: the 3D view goes from night to daylight with `sun.sun`'s elevation. |
+| `power` | | A `sensor.*` with the house's total power, shown in the header. |
+
+### Quality and big homes
+
+However many lamps a plan has, the 3D view uses a fixed handful of real lights: about 4 on `low`,
+8 on `medium` and 12 on `high`. They go to the lamps that are on, on the floor you look at, nearest
+to what the camera frames, brightest first. Every other lamp that is on still glows and throws a soft
+pool of light on the floor; lamps that are off cost nothing. Shadows come from a few of those lights
+only, never from table, floor or strip lights, and never more than the phone's graphics chip can
+take. `low` also skips the bloom glow and renders at a lower resolution: use it on older phones.
 
 ### Make it the phone app's default
 
@@ -81,6 +120,8 @@ notch.
 The plan format is house-control's, with Home Assistant links and a new `entities` section. See
 **[docs/plan-format.md](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md)**. In short:
 
+- `floors` (optional) are the storeys, each with its own buttons; rooms then name theirs with
+  `storey`. See [floors](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md#floors-new-in-this-card).
 - `rooms` are rectangles in metres (`x` grows east, `z` grows south), with `oak`, `walnut`,
   `tile`, `stone` or `carpet` floors. `openings` are doors and windows, `furniture` is decoration:
   house-control's pieces (sofa, bed, kitchen, dining set...) plus this card's extras: `poolTable`,
@@ -94,9 +135,12 @@ The plan format is house-control's, with Home Assistant links and a new `entitie
   fixtures on one switch.
 - `lights` link to `light.*` or `switch.*` entities with `link: { service: homeassistant, id: ... }`.
   Leave `capabilities` out and they come from the entity's `supported_color_modes`.
-- `entities` holds everything else (TV, thermostat, lock...); `tap` is `more-info`, `toggle` or
-  `navigate`.
-- `scenes` set lights, or `run` a `script.*` or `scene.*`.
+- `entities` holds everything else (TV, thermostat, lock...), with Home Assistant's `tap_action`,
+  `hold_action` and `double_tap_action` (the older `tap: more-info | toggle | navigate` still works).
+- `scenes` set lights, or `run` a `script.*` or `scene.*`, lit up while their `active_when` matches.
+- Optional sensors make the model show what is going on: `contact` and `lock` on doors, `garage`
+  doors with a `cover`, `occupancy` and `temperature` on rooms, `people`, `fan` and `power` on lights,
+  and an `entity` on a TV. See [what the house is doing](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md#what-the-house-is-doing-new-in-this-card).
 
 ### Editing
 
@@ -112,6 +156,9 @@ its editing menu.
    nothing is uploaded.
 4. **Import**: ⚙ → **Import plan…**, pick a `.plan.json`. The card checks it, shows what changes
    (rooms, lights and devices added or removed) and saves it into the card.
+5. **From Home Assistant**: in the editor, **Add → From Home Assistant** builds rooms from your areas
+   (on your floors), with their lights, lamp-like switches and devices to pick from. It adds only
+   what the plan is missing, or starts a new plan; nothing is saved until you press Save.
 
 **YAML-mode dashboards** can't be saved from the card: the editor then downloads the plan for you to
 paste in. You can also keep the plan in its own file and include it. Put that file anywhere under
@@ -127,11 +174,20 @@ views:
         plan: !include house/home.plan.yaml   # /config/house/, NOT /config/www/
 ```
 
+## Theme and motion
+
+The panel, sheets and dialogs take your Home Assistant theme's colours (`--primary-color`,
+`--primary-text-color`, `--card-background-color`) and `--ha-card-border-radius`; with a light theme
+the panel becomes a light sheet over the 3D view. The 3D view itself keeps its night look. With
+**reduce motion** turned on in the phone or browser, there is no fly-in, no pulse on a tap and the
+camera jumps instead of gliding.
+
 ## Sensitive devices
 
 Locks, alarm panels, covers (garage doors, gates, blinds: all covers), valves, sirens and cameras are
-**never one-tap**. Tapping one always opens Home Assistant's own more-info dialog, which handles
-codes and confirmations. The card refuses a plan that tries to `toggle` one, and no scene,
+**never one-tap**. Tapping, holding or double-tapping one always opens Home Assistant's own more-info
+dialog, which handles codes and confirmations. The card refuses a plan that tries to `toggle` one or
+reach one with `perform-action` (also through `target`), and no scene,
 "All on", "All off" or the power button ever reaches them: bulk actions only change `light`,
 `switch`, `fan`, `climate` and `media_player`. Scenes may run your own `script.*` and `scene.*`.
 
@@ -164,12 +220,17 @@ npm run check      # lint, privacy check, unit tests, build, headless render tes
 - `upstream/`: house-control's `web/src`, changed as little as possible. Every change is marked
   `ha3d:`; [upstream/UPSTREAM.md](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/upstream/UPSTREAM.md) lists them and explains how to take in
   upstream updates.
-- `src/ha/`: everything Home Assistant: the card element, the bridge (`hass` ↔ store), state
-  mapping, sensitive-device rules, plan validation and storage, entity markers and the editor host.
-- `tests/unit/`: mapping, sensitive rules and validation (`node --test`).
-- `tests/render/`: Playwright with headless Chromium and a mock `hass`: renders, light taps,
-  live updates, locks open more-info, bulk actions skip sensitive devices, the editor saves, and no
-  request leaves the page.
+- `src/ha/`: everything Home Assistant: the card element and its options editor, the bridge
+  (`hass` ↔ store), state mapping, sensitive-device and action rules, plan validation and storage,
+  floors, the light pool, the live layer (sensors, people, fans, TVs), entity markers, the registry
+  import and the editor host.
+- `tests/unit/`: mapping, sensitive rules, actions, validation, floors, the light pool, the registry
+  import and the live fields (`node --test`).
+- `tests/render/`: Playwright with headless Chromium and a mock `hass` (with a mock registry):
+  renders, light taps, live updates, locks open more-info, bulk actions skip sensitive devices,
+  floors and the stacked view, a 50-light plan within the light budget, Home Assistant actions, the
+  card editor, the import, doors, people, the heat map, fans, TVs and the sun, and that no request
+  leaves the page.
 
 Releases: bump `version` in `package.json`, commit, then push a tag `vX.Y.Z` that matches it. The
 Release workflow runs every check, builds the bundle and publishes a GitHub release with
@@ -181,3 +242,14 @@ so a commit on `main` without a tag never shows up as an update.
 Based on [house-control](https://github.com/0xProbabillity/house-control) by 0xProbability, MIT
 licence. Its `LICENSE` is kept as is; see [NOTICE](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/NOTICE). This project's own code is MIT too.
 Bundles [three.js](https://threejs.org) (MIT) and [Lucide](https://lucide.dev) icons (ISC).
+
+[hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[hacs-url]: https://hacs.xyz/docs/faq/custom_repositories/
+[release-badge]: https://img.shields.io/github/v/release/Jabberwocky7777/shrumslab-HA3D
+[release-url]: https://github.com/Jabberwocky7777/shrumslab-HA3D/releases/latest
+[downloads-badge]: https://img.shields.io/github/downloads/Jabberwocky7777/shrumslab-HA3D/total
+[ha-badge]: https://img.shields.io/badge/Home%20Assistant-2024.11%2B-41BDF5.svg
+[ha-url]: https://www.home-assistant.io/
+[ci-badge]: https://github.com/Jabberwocky7777/shrumslab-HA3D/actions/workflows/ci.yml/badge.svg
+[ci-url]: https://github.com/Jabberwocky7777/shrumslab-HA3D/actions/workflows/ci.yml
+[license-badge]: https://img.shields.io/github/license/Jabberwocky7777/shrumslab-HA3D

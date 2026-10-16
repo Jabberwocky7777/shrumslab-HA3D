@@ -4,10 +4,13 @@
 import { h } from '../../upstream/ui/dom.js';
 import { bootEditor } from '../../upstream/editor/editor.js';
 import { createEditorLinks } from './editor-links.js';
+import { createEditorFloors } from './editor-floors.js';
+import { openImportDialog } from './import-dialog.js';
 import { validatePlan } from './validate.js';
 import { savePlan, exportPlan, SaveFallback } from './plan-store.js';
 
-export async function openEditor(shadow, { plan, getHass, getCardConfig, onSaved, onClosed }) {
+// `save(plan)`: where Save goes instead of the dashboard (the card's own editor: back into its config).
+export async function openEditor(shadow, { plan, getHass, getCardConfig, onSaved, onClosed, save = null }) {
   const layer = h('div.hc-root.ios.mode-editor.hc-editor-layer');
   shadow.append(layer);
   const listeners = new AbortController();
@@ -25,11 +28,27 @@ export async function openEditor(shadow, { plan, getHass, getCardConfig, onSaved
     editor = await bootEditor(layer, {
       plan,
       links: createEditorLinks(getHass),
+      floors: createEditorFloors(),
+      // Only administrators get the editor at all; the import checks again before reading the registry.
+      tools: [{
+        id: 'ha-import', icon: 'homeassistant', label: 'From Home Assistant',
+        run: (api) => {
+          if (!getHass()?.user?.is_admin) return;
+          openImportDialog(api.root.querySelector('.editor') || api.root, {
+            getHass, getPlan: api.getDoc, onApply: (next, note) => api.setDoc(next, note),
+          });
+        },
+      }],
       validate: (p) => validatePlan(p).config,
       signal: listeners.signal,
       phone: window.matchMedia('(max-width: 899px), (pointer: coarse)').matches,
       onClose: close,
       async onSave(next) {
+        if (save) {
+          const note = await save(next);
+          onSaved?.(next);
+          return note;
+        }
         try {
           await savePlan(getHass(), getCardConfig(), next);
         } catch (e) {

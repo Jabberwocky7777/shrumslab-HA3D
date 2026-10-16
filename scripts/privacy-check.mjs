@@ -16,7 +16,7 @@ const ENTITY = new RegExp(`(?<![-.\\w])(${DOMAINS})\\.([a-z0-9_]+)\\b`, 'g');
 // Service names (light.turn_on) and documentation placeholders (light.your_light) are fine.
 const SERVICES = new Set(['turn_on', 'turn_off', 'toggle', 'set_temperature', 'set_hvac_mode', 'set_fan_mode',
   'set_preset_mode', 'open_cover', 'close_cover', 'stop_cover', 'lock', 'unlock', 'open', 'reload', 'media_play',
-  'media_pause', 'volume_set', 'select_source', 'press', 'apply', 'create', 'set_percentage', 'oscillate', 'start',
+  'media_pause', 'media_play_pause', 'volume_set', 'select_source', 'press', 'apply', 'create', 'set_percentage', 'oscillate', 'start',
   'stop', 'return_to_base', 'alarm_arm_home', 'alarm_arm_away', 'alarm_disarm', 'snapshot', 'trigger']);
 const PLACEHOLDER = /^(demo_|your_|my_|example|object_id\b|entity\b|x\b|y\b)/;
 

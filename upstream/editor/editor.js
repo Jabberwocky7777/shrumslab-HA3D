@@ -20,8 +20,10 @@ const sv = (tag, attrs = {}, ...kids) => {
 };
 
 // ha3d: `entity` is the plan's `entities` section (other Home Assistant devices: TV, thermostat, lock...).
-const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', entity: 'entities', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
-const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', entity: 'Other devices', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
+// ha3d: `floor` is the plan's `floors` (src/ha/editor-floors.js); a plan without floors has none, not [].
+const KEYS = { floor: 'floors', room: 'rooms', light: 'lights', ac: 'acs', entity: 'entities', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
+const TITLES = { floor: 'Floors', room: 'Rooms', light: 'Lights', ac: 'Air conditioners', entity: 'Other devices', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
+const LISTS = Object.values(KEYS).filter((k) => k !== 'floors'); // ha3d
 const ENTITY_ICONS = ['box', 'tv', 'thermo', 'fan', 'lock', 'garage', 'shield', 'camera', 'speaker', 'plug', 'blinds', 'door', 'sensor'];
 const isLinked = (d) => linkedDevice(d) || Boolean(d?.entity);
 const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c', carpet: '#45403a' }; // ha3d: carpet
@@ -40,13 +42,27 @@ const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 //   validate  plan -> normalised plan, throws a ConfigError (defaults to upstream's normalize)
 //   signal    AbortSignal that removes the editor's window listeners
 //   phone     the iPhone layout (default) or the Mac one
-export async function bootEditor(root, { plan: initialPlan, onSave, onClose, links, validate: check = normalize, signal, phone: isPhone = true }) {
+//   floors    floors on the plan (src/ha/editor-floors.js), or null
+//   tools     more actions: [{ id, icon, label, run(api) }]; api: { getDoc(), setDoc(plan, note), root }
+export async function bootEditor(root, { plan: initialPlan, onSave, onClose, links, validate: check = normalize, signal, phone: isPhone = true, floors: fx = null, tools: hostTools = [] }) {
   let doc = structuredClone(initialPlan);
-  for (const key of Object.values(KEYS)) doc[key] ||= [];
+  for (const key of LISTS) doc[key] ||= []; // ha3d: floors stay absent until one is added
   const activeElement = () => root.getRootNode().activeElement; // ha3d: document.activeElement is the card in a shadow root
 
   let sel = { kind: 'home' };
   let dirty = false;
+  // ha3d: the floor the 2D plan shows (null: the plan has no floors), and what is on it.
+  let floor = fx?.initial(doc) ?? null;
+  const onFloor = (kind, item) => !fx || !floor || (fx.itemFloor(doc, kind, item) ?? floor) === floor;
+  const floorBar = h('div.e-floors-host');
+  function showFloor(id) {
+    if (id === floor) return;
+    floor = id;
+    if (sel.index != null && !onFloor(sel.kind, doc[KEYS[sel.kind]]?.[sel.index])) sel = { kind: 'home' };
+    renderSidebar(); renderPlan(); renderInspector();
+    if (isPhone) phone.reveal();
+    world?.setFloor(floor);
+  }
   let world = null;
   let phone = null; // the iPhone's layout and gestures, set up by buildPhoneLayout()
   let previewLights = true;
@@ -69,6 +85,23 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
   const previewHost = h('div.preview');
   const previewToggle = h('button.chip', { onclick: () => { previewLights = !previewLights; schedulePreview(0); } });
 
+  // ha3d: the host's tools (Import from Home Assistant…) replace the plan through this
+  const toolApi = {
+    root,
+    getDoc: () => structuredClone(doc),
+    setDoc(next, note) {
+      snapshot();
+      doc = structuredClone(next);
+      for (const key of LISTS) doc[key] ||= [];
+      nameInput.value = doc.name || 'Home';
+      floor = fx?.initial(doc) ?? null;
+      sel = { kind: 'home' };
+      touch();
+      if (isPhone) phone.reveal();
+      if (note) toast(note);
+    },
+  };
+
   if (isPhone) buildPhoneLayout();
   else root.replaceChildren(h('div.editor',
     h('header.bar',
@@ -77,11 +110,12 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         h('button.btn', { title: 'Undo (⌘Z)', onclick: () => stepHistory(undo, redo) }, 'Undo'),
         h('button.btn', { title: 'Redo (⇧⌘Z)', onclick: () => stepHistory(redo, undo) }, 'Redo'),
         h('button.btn', { onclick: importPlan }, 'Import…'),
+        hostTools.map((t) => h('button.btn', { 'data-tool': t.id, onclick: () => t.run(toolApi) }, `${t.label}…`)), // ha3d
         h('button.btn', { onclick: exportPlan }, 'Export…'),
         saveBtn,
         h('button.btn', { onclick: () => { world?.dispose(); world = null; onClose(); } }, 'Close'))), // ha3d
     sidebar,
-    h('main.canvas', plan, hint),
+    h('main.canvas', plan, floorBar, hint), // ha3d: floorBar
     h('aside.right', h('div.preview-wrap', previewHost, previewToggle), inspector),
     h('footer.foot', status),
     toastEl));
@@ -102,6 +136,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     to.push(JSON.stringify(doc));
     doc = JSON.parse(from.pop());
     lastSnapshotKey = null;
+    if (fx && !doc.floors?.some((f) => f.id === floor)) floor = fx.initial(doc); // ha3d
     if (sel.index != null && !doc[KEYS[sel.kind]]?.[sel.index]) sel = { kind: 'home' };
     nameInput.value = doc.name || '';
     touch();
@@ -117,6 +152,10 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
   }
 
   function select(next) {
+    // ha3d: picking something on another floor (in the list) shows that floor
+    const picked = next.index != null ? doc[KEYS[next.kind]]?.[next.index] : null;
+    const on = !fx || !picked ? null : next.kind === 'floor' ? picked.id : fx.itemFloor(doc, next.kind, picked);
+    if (on && on !== floor) { floor = on; world?.setFloor(floor); }
     sel = next;
     lastSnapshotKey = null;
     renderSidebar();
@@ -140,7 +179,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
       valid = check(structuredClone(doc));
       const linked = [...doc.lights, ...doc.acs, ...doc.entities].filter(isLinked).length;
       status.className = 'status';
-      status.replaceChildren(h('span.ok', '●'), ` ${doc.rooms.length} rooms · ${doc.lights.length} lights · ${doc.entities.length} other devices · `,
+      status.replaceChildren(h('span.ok', '●'), ` ${doc.floors?.length > 1 ? `${doc.floors.length} floors · ` : ''}${doc.rooms.length} rooms · ${doc.lights.length} lights · ${doc.entities.length} other devices · `,
         `${linked} linked to Home Assistant`, dirty ? h('span.dirty', ' · unsaved changes') : '');
     } catch (e) {
       valid = null;
@@ -182,6 +221,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         },
       });
       world.setInsets(isPhone ? 20 : 6, isPhone ? 20 : 6);
+      if (floor) world.setFloor(floor); // ha3d
       world.setRunning(true);
       const w = world;
       new ResizeObserver(() => { if (world === w) w.resize(); }).observe(canvas);
@@ -193,6 +233,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
   /* ---------- sidebar ---------- */
 
   function rowLabel(kind, item) {
+    if (kind === 'floor') return fx.rowLabel(item); // ha3d
     if (kind === 'room') return [item.name || item.id, `${fix(item.rect[2])} × ${fix(item.rect[3])} m`];
     if (kind === 'light') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
     if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.wall} wall`];
@@ -203,17 +244,19 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
   }
 
   const roomName = (id) => doc.rooms.find((r) => r.id === id)?.name || id || '';
-  const roomAt = ([x, z]) => doc.rooms.find((r) => x >= r.rect[0] && x <= r.rect[0] + r.rect[2] && z >= r.rect[1] && z <= r.rect[1] + r.rect[3]);
+  const roomAt = ([x, z]) => doc.rooms.find((r) => onFloor('room', r) && x >= r.rect[0] && x <= r.rect[0] + r.rect[2] && z >= r.rect[1] && z <= r.rect[1] + r.rect[3]); // ha3d: this floor
 
   function renderSidebar() {
     const nodes = [h(`button.row.home-row${sel.kind === 'home' ? '.active' : ''}`, { onclick: () => select({ kind: 'home' }) },
       icon('home', 15), h('span.row-name', 'Home settings'))];
     for (const kind of Object.keys(KEYS)) {
-      const items = doc[KEYS[kind]];
+      if (kind === 'floor' && !fx) continue; // ha3d
+      const items = doc[KEYS[kind]] || []; // ha3d: no floors
       nodes.push(h('div.group',
         h('span', `${TITLES[kind]}`), h('span.n', items.length),
         h('button.add', { title: `Add to ${TITLES[kind].toLowerCase()}`, 'aria-label': `Add ${kind}`, onclick: () => add(kind) }, icon('plus', 14, 2.4))));
       items.forEach((item, index) => {
+        if (!onFloor(kind, item)) return; // ha3d: the list shows the floor on the plan
         const [name, sub] = rowLabel(kind, item);
         const active = sel.kind === kind && sel.index === index;
         nodes.push(h(`div.row${active ? '.active' : ''}`, { role: 'button', tabindex: 0, onclick: () => select({ kind, index }) },
@@ -236,7 +279,15 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
 
   function add(kind) {
     snapshot();
-    const room = (sel.kind === 'room' && doc.rooms[sel.index]) || doc.rooms.find((r) => r.id === doc[KEYS[sel.kind]]?.[sel.index]?.room) || doc.rooms[0];
+    if (kind === 'floor') { // ha3d
+      const f = fx.addFloor(doc);
+      floor = f.id;
+      sel = { kind, index: doc.floors.indexOf(f) };
+      touch();
+      return;
+    }
+    const room = (sel.kind === 'room' && doc.rooms[sel.index] && onFloor('room', doc.rooms[sel.index]) && doc.rooms[sel.index])
+      || doc.rooms.find((r) => onFloor('room', r) && r.id === doc[KEYS[sel.kind]]?.[sel.index]?.room) || doc.rooms.find((r) => onFloor('room', r)); // ha3d: this floor
     const center = room ? [fix(room.rect[0] + room.rect[2] / 2), fix(room.rect[1] + room.rect[3] / 2)] : [1, 1];
     const list = doc[KEYS[kind]];
     if (kind === 'room') {
@@ -261,6 +312,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     } else if (kind === 'scene') {
       list.push({ id: uniqueId('scene'), name: 'New scene', icon: 'sparkles', lights: { '*': { on: false } } });
     }
+    fx?.placed(doc, floor, kind, list[list.length - 1]); // ha3d
     sel = { kind, index: list.length - 1 };
     touch();
   }
@@ -280,6 +332,17 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
   }
 
   function remove(kind, index) {
+    if (kind === 'floor') { // ha3d
+      const copy = JSON.stringify(doc);
+      const problem = fx.removeFloor(doc, index);
+      if (problem) { toast(problem, true); return; }
+      undo.push(copy);
+      redo.length = 0;
+      floor = fx.initial(doc);
+      sel = { kind: 'home' };
+      touch();
+      return;
+    }
     snapshot();
     const [gone] = doc[KEYS[kind]].splice(index, 1);
     if (kind === 'room') {
@@ -301,7 +364,8 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
   /* ---------- plan (SVG) ---------- */
 
   function bounds() {
-    const rs = doc.rooms.length ? doc.rooms : [{ rect: [0, 0, 6, 4] }];
+    const shown = doc.rooms.filter((r) => onFloor('room', r)); // ha3d: this floor
+    const rs = shown.length ? shown : doc.rooms.length ? doc.rooms : [{ rect: [0, 0, 6, 4] }];
     const minX = Math.min(...rs.map((r) => r.rect[0]));
     const minZ = Math.min(...rs.map((r) => r.rect[1]));
     const maxX = Math.max(...rs.map((r) => r.rect[0] + r.rect[2]));
@@ -325,7 +389,9 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
       sv('rect', { x: b.minX - 20, y: b.minZ - 20, width: 60, height: 60, fill: 'url(#grid)', 'data-kind': 'none' }),
     ];
 
+    if (fx) floorBar.replaceChildren(fx.bar(doc, floor, showFloor)); // ha3d
     doc.rooms.forEach((r, i) => {
+      if (!onFloor('room', r)) return; // ha3d
       const [x, z, w, d] = r.rect;
       const g = sv('g', { class: `p-room${isSel('room', i) ? ' sel' : ''}`, 'data-kind': 'room', 'data-index': i },
         sv('rect', { x, y: z, width: w, height: d, fill: FLOOR_FILL[r.floor] || FLOOR_FILL.oak }),
@@ -335,7 +401,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     });
 
     doc.furniture.forEach((f, i) => {
-      if (!Array.isArray(f.pos)) return;
+      if (!Array.isArray(f.pos) || !onFloor('furniture', f)) return; // ha3d: floor
       const [w, d] = footprint(f);
       kids.push(sv('g', {
         class: `p-furn${isSel('furniture', i) ? ' sel' : ''}`, 'data-kind': 'furniture', 'data-index': i,
@@ -347,6 +413,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     });
 
     doc.openings.forEach((o, i) => {
+      if (!onFloor('opening', o)) return; // ha3d
       if (big) kids.push(sv('line', { class: 'p-hit', 'data-kind': 'opening', 'data-index': i, x1: o.from[0], y1: o.from[1], x2: o.to[0], y2: o.to[1] }));
       kids.push(sv('line', {
         class: `p-open ${o.type || 'door'}${isSel('opening', i) ? ' sel' : ''}`, 'data-kind': 'opening', 'data-index': i,
@@ -355,6 +422,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     });
 
     doc.acs.forEach((a, i) => {
+      if (!onFloor('ac', a)) return; // ha3d
       const rot = { north: 0, east: 90, south: 180, west: 270 }[a.wall] || 0;
       kids.push(sv('g', {
         class: `p-ac${isSel('ac', i) ? ' sel' : ''}`, 'data-kind': 'ac', 'data-index': i,
@@ -365,6 +433,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     });
 
     doc.lights.forEach((l, i) => {
+      if (!onFloor('light', l)) return; // ha3d
       const g = sv('g', {
         class: `p-light ${l.type}${isSel('light', i) ? ' sel' : ''}${isLinked(l) ? ' linked' : ''}`, 'data-kind': 'light', 'data-index': i,
         transform: `translate(${l.pos[0]} ${l.pos[1]}) rotate(${-(l.rot || 0)})`,
@@ -389,7 +458,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     });
 
     doc.entities.forEach((e, i) => {
-      if (!Array.isArray(e.pos)) return;
+      if (!Array.isArray(e.pos) || !onFloor('entity', e)) return; // ha3d: floor
       kids.push(sv('g', {
         class: `p-entity${isSel('entity', i) ? ' sel' : ''}${e.entity ? ' linked' : ''}`, 'data-kind': 'entity', 'data-index': i,
         transform: `translate(${e.pos[0]} ${e.pos[1]})`,
@@ -459,9 +528,9 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         ...doc.lights.filter((l) => l.room === item.id).map((o) => ({ o, from: grab(o) })),
         ...doc.acs.filter((a) => a.room === item.id).map((o) => ({ o, from: grab(o) })),
         ...doc.entities.filter((e) => e.room === item.id && Array.isArray(e.pos)).map((o) => ({ o, from: grab(o) })),
-        ...doc.furniture.filter((f) => Array.isArray(f.pos) && inside(f.pos)).map((o) => ({ o, from: grab(o) })),
+        ...doc.furniture.filter((f) => Array.isArray(f.pos) && inside(f.pos) && onFloor('furniture', f)).map((o) => ({ o, from: grab(o) })), // ha3d: floor
       ];
-      drag.openings = doc.openings.filter((o) => inside(o.from) && inside(o.to)).map((o) => ({ o, from: [...o.from], to: [...o.to] }));
+      drag.openings = doc.openings.filter((o) => inside(o.from) && inside(o.to) && onFloor('opening', o)).map((o) => ({ o, from: [...o.from], to: [...o.to] })); // ha3d: floor
     } else if (kind === 'opening') {
       drag.from = [...item.from];
       drag.to = [...item.to];
@@ -577,11 +646,16 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         } else if (!item) {
       head('Nothing selected');
       if (isPhone) nodes.push(h('p.note', 'Tap a room, a lamp or anything else on the plan.'));
+    } else if (kind === 'floor') { // ha3d: src/ha/editor-floors.js
+      head(item.name || item.id, `id: ${item.id}`);
+      const ctx = { bind, text, number, choice, section, row, prop, optional, parseNum, optNum, snapshot: () => snapshot(), touch: () => touch(), links, linkHooks };
+      nodes.push(fx.inspector(doc, sel.index, ctx, { onRemove: () => remove('floor', sel.index) }));
     } else if (kind === 'room') {
       head(item.name || item.id, `id: ${item.id}`);
       nodes.push(section('Room',
         bind('Name', text(), prop(item, 'name', '')),
-        bind('Floor', choice(FLOOR_KINDS), { ...prop(item, 'floor', 'oak'), event: 'change' })),
+        bind('Floor finish', choice(FLOOR_KINDS), { ...prop(item, 'floor', 'oak'), event: 'change' }), // ha3d: "Floor" is a storey now
+        fx?.roomField(doc, item, { bind, choice })), // ha3d
       section('Position & size, m',
         row(bind('X', number(0.1), { ...at(item, 'rect', 0), parse: parseNum }), bind('Z', number(0.1), { ...at(item, 'rect', 1), parse: parseNum })),
         row(bind('Width', number(0.1), { ...at(item, 'rect', 2), parse: parseNum }), bind('Depth', number(0.1), { ...at(item, 'rect', 3), parse: parseNum })),
@@ -664,12 +738,13 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     } else if (kind === 'opening') {
       head(item.type || 'door', 'A gap or a window in a wall');
       nodes.push(section('Opening',
-        bind('Type', choice([['door', 'Door'], ['open', 'Open passage'], ['window', 'Window']]), { ...prop(item, 'type', 'door'), event: 'change' }),
+        bind('Type', choice([['door', 'Door'], ['open', 'Open passage'], ['window', 'Window'], ['garage', 'Garage door']]), { ...prop(item, 'type', 'door'), event: 'change' }), // ha3d: garage
         row(bind('From X', number(), { ...at(item, 'from', 0), parse: parseNum }), bind('From Z', number(), { ...at(item, 'from', 1), parse: parseNum })),
         row(bind('To X', number(), { ...at(item, 'to', 0), parse: parseNum }), bind('To Z', number(), { ...at(item, 'to', 1), parse: parseNum })),
         item.type === 'window' ? row(bind('Sill, m', number(), { ...prop(item, 'sill', 0.85), parse: parseNum }),
           bind('Head, m', number(), { ...prop(item, 'head', 2.1), parse: parseNum })) : null,
-        h('p.note', 'Both points must lie on the same wall line (same X or same Z). Windows only show on the far walls; the walls facing the camera are cut away.')));
+        h('p.note', 'Both points must lie on the same wall line (same X or same Z). Windows only show on the far walls; the walls facing the camera are cut away.')),
+      links.openingSection?.(item, linkHooks)); // ha3d: contact sensor, lock, garage cover
     } else if (kind === 'scene') {
       head(item.name || item.id, `id: ${item.id}`);
       item.lights ||= {};
@@ -744,7 +819,8 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
       }
       snapshot();
       doc = json;
-      for (const key of Object.values(KEYS)) doc[key] ||= [];
+      for (const key of LISTS) doc[key] ||= []; // ha3d
+      floor = fx?.initial(doc) ?? null; // ha3d
       nameInput.value = doc.name || 'Home';
       sel = { kind: 'home' };
       touch();
@@ -818,11 +894,13 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
     const addables = [
       ['room', 'home', 'Room'], ['light', 'bulb', 'Lamp'], ['ac', 'ac', 'Air conditioner'], ['entity', 'box', 'Other device'],
       ['opening', 'opening', 'Door or window'], ['furniture', 'furniture', 'Furniture'], ['scene', 'sparkles', 'Scene'],
+      ...(fx ? [['floor', 'layers', 'Floor']] : []), // ha3d
     ];
+    const extra = hostTools.map((t) => h('button.p-add-item', { 'data-tool': t.id, onclick: () => { closeModals(); t.run(toolApi); } }, icon(t.icon, 24, 1.8), h('span', t.label))); // ha3d
     addSheet.append(h('div.p-modal-head', h('b', 'Add to the plan'), h('button.p-text', { onclick: closeModals }, 'Cancel')),
       h('div.p-add-grid', addables.map(([kind, name, label]) => h('button.p-add-item', {
         onclick: () => { closeModals(); add(kind); haptic('light'); ui.reveal(); },
-      }, icon(name, 24, 1.8), h('span', label)))));
+      }, icon(name, 24, 1.8), h('span', label))), extra)); // ha3d: extra
     confirmSheet.append(h('div.p-modal-head', h('b', 'Unsaved changes')),
       h('p.note', 'Save them into this card before closing?'),
       h('div.p-confirm-actions',
@@ -831,7 +909,7 @@ export async function bootEditor(root, { plan: initialPlan, onSave, onClose, lin
         h('button.btn.wide', { onclick: closeModals }, 'Keep editing')));
 
     sheet.append(grip, inspector);
-    canvas.append(plan, h('div.p-preview', previewHost, previewToggle), issue, fitBtn, hint);
+    canvas.append(plan, h('div.p-preview', previewHost, previewToggle), issue, fitBtn, floorBar, hint); // ha3d: floorBar
     const shell = h('div.editor.phone',
       h('header.p-bar', h('button.p-icon', { 'aria-label': 'Close', onclick: requestClose }, icon('close', 20, 2.2)),
         nameInput, undoBtn, redoBtn, doneBtn),

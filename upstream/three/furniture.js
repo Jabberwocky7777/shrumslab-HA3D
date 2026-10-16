@@ -108,7 +108,7 @@ const builders = {
       ...legs(width, 0.4, 0.1, mat(BLACK), 0.08, 0.015),
       ...doorLines(width, 0.3, 0.13, 0.2, 3, mat(BLACK)),
       at(box(sw + 0.03, sh + 0.03, 0.035, mat(BLACK, { rough: 0.4 }), { r: 0.008 }), 0, 0.72, -0.15),
-      at(box(sw - 0.02, sh - 0.02, 0.01, screen, { r: 0 }), 0, 0.745, -0.129),
+      named(at(box(sw - 0.02, sh - 0.02, 0.01, screen, { r: 0 }), 0, 0.745, -0.129), 'screen'), // ha3d: lit by a media player
       at(box(0.5, 0.07, 0.09, mat('#2a2c33', { rough: 0.7 }), { r: 0.02 }), 0, 0.46, 0.05),
     );
   },
@@ -354,6 +354,9 @@ export function footprint(item) {
   }
 }
 
+// ha3d: names a mesh so src/ha/live.js can find it (a TV's screen)
+const named = (mesh, name) => { mesh.name = name; return mesh; };
+
 export function buildFurniture(items) {
   const root = new THREE.Group();
   for (const item of items) {
@@ -363,6 +366,7 @@ export function buildFurniture(items) {
       continue;
     }
     const g = make(item);
+    g.userData.item = item; // ha3d: src/ha/live.js finds TVs with an entity
     g.position.set(item.pos[0], item.y || 0, item.pos[1]);
     g.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
     const flat = g.userData.flat;

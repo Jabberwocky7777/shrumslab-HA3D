@@ -3,33 +3,48 @@
 import { h } from '../../upstream/ui/dom.js';
 import { icon } from '../../upstream/ui/icons.js';
 import { haptic } from '../../upstream/bridge.js';
-import { effectiveAction, domainOf } from './sensitive.js';
+import { effectiveActionConfig } from './sensitive.js';
 import { availabilityOf, isActive, isAlert, temperatureLabel } from './mapping.js';
 import { MARKER_COLORS } from './markers.js';
 
-/** Fires Home Assistant's `hass-more-info` event, which opens its own dialog for the entity. */
-export function moreInfo(node, entityId) {
-  node.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId }, bubbles: true, composed: true }));
+/**
+ * Hands a gesture to Home Assistant's own action handling: the frontend listens for `hass-action`
+ * (src/state/action-mixin.ts) and runs it with handleAction, confirmations included. What is sent
+ * has been through effectiveActionConfig: a sensitive device only ever gets more-info.
+ */
+export function fireAction(node, entity, which, actionConfig) {
+  node.dispatchEvent(new CustomEvent('hass-action', {
+    detail: { config: { entity, [`${which}_action`]: actionConfig }, action: which },
+    bubbles: true, composed: true,
+  }));
 }
 
-/** Navigates the Home Assistant frontend to a dashboard path, as its own cards do. */
-export function navigate(path) {
-  if (typeof path !== 'string' || !path.startsWith('/')) return;
-  history.pushState(null, '', path);
-  window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
-}
-
-/** Runs the tap or hold action of a plan entity. Returns what it did, for tests. */
+/**
+ * Runs the tap, hold or double_tap action of a plan entity (or a light with an override).
+ * Returns the action that was run ('more-info', 'toggle'...), or null when there was none.
+ */
 export function runAction(node, hass, cfg, which = 'tap') {
-  const action = effectiveAction(cfg.entity, which === 'hold' ? cfg.hold : cfg.tap);
-  if (action === 'navigate') { navigate(cfg.path); return 'navigate'; }
-  if (action === 'toggle' && hass?.states[cfg.entity] && !availabilityOf(hass.states[cfg.entity])) {
-    haptic('light');
-    return hass.callService(domainOf(cfg.entity), 'toggle', { entity_id: cfg.entity })
-      .then(() => 'toggle', (e) => { haptic('error'); throw e; });
-  }
-  moreInfo(node, cfg.entity);
-  return 'more-info';
+  const own = cfg[`${which}_action`];
+  if (!own && which === 'double_tap') return null;
+  let action = effectiveActionConfig(cfg.entity, own || { action: 'more-info' });
+  // An entity that is unavailable cannot be toggled: show its dialog instead.
+  if (action.action === 'toggle' && availabilityOf(hass?.states?.[cfg.entity])) action = { action: 'more-info' };
+  if (action.action === 'none') return 'none';
+  fireAction(node, cfg.entity, which, action);
+  return action.action;
+}
+
+/**
+ * A tap handler that tells single from double taps when the item has a double_tap_action
+ * (Home Assistant waits 250 ms the same way); without one a tap acts at once.
+ */
+export function doubleTapper(cfg, act, wait = 250) {
+  let timer = 0;
+  return () => {
+    if (!cfg.double_tap_action) { act('tap'); return; }
+    if (timer) { clearTimeout(timer); timer = 0; act('double_tap'); return; }
+    timer = setTimeout(() => { timer = 0; act('tap'); }, wait);
+  };
 }
 
 /** idle | active | alert | unavailable */
@@ -75,6 +90,8 @@ export function entityTile(cfg, { host, getHass, onAction }) {
     setTimeout(() => el.classList.remove('bump'), 260);
     Promise.resolve(runAction(host, getHass(), cfg, which)).then(onAction, (e) => onAction?.(null, e));
   };
+  // With a double_tap_action a single tap waits a moment for the second one.
+  const tapped = doubleTapper(cfg, act);
 
   let press = null;
   el.addEventListener('pointerdown', (ev) => {
@@ -95,10 +112,10 @@ export function entityTile(cfg, { host, getHass, onAction }) {
   const end = (ev) => {
     if (!press) return;
     clearTimeout(press.timer);
-    const tapped = !press.held && ev.type === 'pointerup';
+    const wasTap = !press.held && ev.type === 'pointerup';
     press = null;
     el.classList.remove('pressed');
-    if (tapped) act('tap');
+    if (wasTap) tapped();
   };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);

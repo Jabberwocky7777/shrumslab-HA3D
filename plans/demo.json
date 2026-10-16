@@ -6,16 +6,35 @@
   "camera": { "azimuth": 30, "elevation": 48 },
   "outdoorTemp": 24,
 
+  "floors": [
+    { "id": "main", "name": "Main", "level": 0,
+      "actions": [
+        { "id": "on", "name": "Lights on", "icon": "sun", "run": "script.demo_main_lights_on" },
+        { "id": "off", "name": "All off", "icon": "moon", "builtin": "all_off" },
+        { "id": "movie", "name": "Movie", "icon": "film", "run": "scene.demo_movie",
+          "active_when": [{ "entity": "media_player.demo_tv", "state": "playing" },
+                          { "entity": "input_boolean.demo_movie_mode", "state": "on" }] }
+      ] },
+    { "id": "basement", "name": "Basement", "level": -1, "height": 2.4 }
+  ],
+
   "rooms": [
-    { "id": "bedroom", "name": "Bedroom",  "rect": [0, 0, 4.2, 3.6],     "floor": "walnut" },
-    { "id": "bath",    "name": "Bathroom", "rect": [4.2, 0, 2.2, 3.6],   "floor": "tile" },
-    { "id": "kitchen", "name": "Kitchen",  "rect": [6.4, 0, 4.0, 3.6],   "floor": "stone" },
-    { "id": "office",  "name": "Office",   "rect": [10.4, 0, 3.2, 3.6],  "floor": "oak" },
-    { "id": "living",  "name": "Living",   "rect": [0, 3.6, 6.4, 4.6],   "floor": "oak" },
-    { "id": "dining",  "name": "Dining",   "rect": [6.4, 3.6, 4.0, 4.6], "floor": "oak" },
-    { "id": "hall",    "name": "Hall",     "rect": [10.4, 3.6, 3.2, 4.6], "floor": "stone" },
-    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet" },
-    { "id": "storage", "name": "Storage",  "rect": [8.0, 8.2, 2.4, 2.0],  "floor": "stone" }
+    { "id": "bedroom", "name": "Bedroom",  "rect": [0, 0, 4.2, 3.6],     "floor": "walnut", "storey": "main",
+      "temperature": "sensor.demo_bedroom_temperature" },
+    { "id": "bath",    "name": "Bathroom", "rect": [4.2, 0, 2.2, 3.6],   "floor": "tile", "storey": "main" },
+    { "id": "kitchen", "name": "Kitchen",  "rect": [6.4, 0, 4.0, 3.6],   "floor": "stone", "storey": "main", "area": "demo_kitchen",
+      "occupancy": ["binary_sensor.demo_kitchen_motion"], "temperature": "sensor.demo_kitchen_temperature" },
+    { "id": "office",  "name": "Office",   "rect": [10.4, 0, 3.2, 3.6],  "floor": "oak", "storey": "main" },
+    { "id": "living",  "name": "Living",   "rect": [0, 3.6, 6.4, 4.6],   "floor": "oak", "storey": "main", "area": "demo_living",
+      "occupancy": ["binary_sensor.demo_living_motion"], "temperature": "sensor.demo_living_temperature" },
+    { "id": "dining",  "name": "Dining",   "rect": [6.4, 3.6, 4.0, 4.6], "floor": "oak", "storey": "main" },
+    { "id": "hall",    "name": "Hall",     "rect": [10.4, 3.6, 3.2, 4.6], "floor": "stone", "storey": "main" },
+    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet", "storey": "main" },
+    { "id": "storage", "name": "Storage",  "rect": [8.0, 8.2, 2.4, 2.0],  "floor": "stone", "storey": "main" },
+
+    { "id": "bar",     "name": "Bar",      "rect": [0, 0, 6.4, 4.4],     "floor": "walnut", "storey": "basement" },
+    { "id": "gym",     "name": "Gym",      "rect": [6.4, 0, 4.0, 4.4],   "floor": "stone",  "storey": "basement" },
+    { "id": "utility", "name": "Utility",  "rect": [10.4, 0, 3.2, 4.4],  "floor": "tile",   "storey": "basement" }
   ],
 
   "openings": [
@@ -25,19 +44,25 @@
     { "type": "open",   "from": [7.0, 3.6],   "to": [10.0, 3.6] },
     { "type": "door",   "from": [10.4, 5.4],  "to": [10.4, 6.4] },
     { "type": "door",   "from": [11.2, 3.6],  "to": [12.1, 3.6] },
-    { "type": "door",   "from": [11.6, 8.2],  "to": [12.6, 8.2] },
+    { "type": "door",   "from": [11.6, 8.2],  "to": [12.6, 8.2],
+      "contact": "binary_sensor.demo_front_door", "lock": "lock.demo_front_door" },
     { "type": "window", "from": [0, 1.0],     "to": [0, 2.6] },
-    { "type": "window", "from": [0, 7.0],     "to": [0, 7.9] },
+    { "type": "window", "from": [0, 7.0],     "to": [0, 7.9], "contact": "binary_sensor.demo_living_window" },
     { "type": "window", "from": [0.9, 0],     "to": [2.3, 0], "sill": 1.5, "head": 2.2 },
     { "type": "window", "from": [11.0, 0],    "to": [13.0, 0] },
     { "type": "door",   "from": [1.4, 8.2],   "to": [2.3, 8.2] },
     { "type": "window", "from": [0, 9.8],     "to": [0, 11.4] },
-    { "type": "door",   "from": [8.7, 8.2],   "to": [9.5, 8.2] }
+    { "type": "door",   "from": [8.7, 8.2],   "to": [9.5, 8.2] },
+    { "type": "garage", "from": [8.2, 10.2],  "to": [10.2, 10.2], "head": 2.0, "cover": "cover.demo_garage_door" },
+
+    { "type": "door",   "from": [6.4, 3.2],   "to": [6.4, 4.1], "storey": "basement" },
+    { "type": "door",   "from": [10.4, 1.0],  "to": [10.4, 1.9], "storey": "basement" },
+    { "type": "window", "from": [0, 1.2],     "to": [0, 2.6], "sill": 1.6, "head": 2.1, "storey": "basement" }
   ],
 
   "furniture": [
     { "type": "rug",         "pos": [2.3, 6.0],   "size": [2.5, 3.1], "color": "#3b4a66" },
-    { "type": "tv",          "pos": [0.32, 6.0],  "rot": 90,  "width": 1.7 },
+    { "type": "tv",          "pos": [0.32, 6.0],  "rot": 90,  "width": 1.7, "entity": "media_player.demo_tv" },
     { "type": "sofa",        "pos": [3.95, 6.0],  "rot": -90, "width": 2.5, "color": "#8b93a7" },
     { "type": "coffeeTable", "pos": [2.3, 6.0],   "rot": 90 },
     { "type": "armchair",    "pos": [1.9, 4.35],  "rot": 12,  "color": "#c28a5a" },
@@ -70,7 +95,14 @@
     { "type": "sectional",    "pos": [6.2, 12.25], "rot": 180, "width": 2.6 },
     { "type": "treadmill",    "pos": [7.4, 9.4] },
     { "type": "glassCabinet", "pos": [0.9, 13.0],  "rot": 180 },
-    { "type": "bookshelf",    "pos": [10.2, 9.3],  "rot": -90 }
+    { "type": "bookshelf",    "pos": [10.2, 9.3],  "rot": -90 },
+
+    { "type": "wetBar",       "pos": [2.6, 0.33],  "width": 2.4, "storey": "basement" },
+    { "type": "pokerTable",   "pos": [2.2, 2.7],   "storey": "basement" },
+    { "type": "stairs",       "pos": [5.6, 2.2],   "length": 3.5, "storey": "basement" },
+    { "type": "treadmill",    "pos": [7.6, 2.2],   "storey": "basement" },
+    { "type": "plant",        "pos": [9.9, 3.9],   "height": 1.2, "storey": "basement" },
+    { "type": "dehumidifier", "pos": [12.9, 0.4],  "storey": "basement" }
   ],
 
   "lights": [
@@ -83,10 +115,11 @@
       "link": { "service": "homeassistant", "id": "light.demo_tv_backlight" } },
 
     { "id": "dining.pendant", "name": "Pendant",       "room": "dining",  "type": "pendant", "pos": [8.5, 6.4], "y": 1.75,
+      "hold_action": { "action": "more-info" },
       "link": { "service": "homeassistant", "id": "light.demo_dining_pendant" } },
 
     { "id": "kitchen.spots",  "name": "Spots",         "room": "kitchen", "type": "spots",   "pos": [8.4, 2.0],
-      "capabilities": ["brightness"],
+      "capabilities": ["brightness"], "power": "sensor.demo_kitchen_spots_power",
       "link": { "service": "homeassistant", "id": "light.demo_kitchen_spots" } },
     { "id": "kitchen.strip",  "name": "Counter light", "room": "kitchen", "type": "strip",   "pos": [8.05, 0.42], "y": 1.42,
       "length": 2.9, "link": { "service": "homeassistant", "id": "light.demo_kitchen_counter" } },
@@ -119,10 +152,20 @@
     { "id": "rec.sconces",    "name": "Sconces",       "room": "rec",     "type": "sconce",  "pos": [0.03, 10.6],
       "points": [[0.03, 9.2, 90], [0.03, 12.0, 90]],
       "link": { "service": "homeassistant", "id": "light.demo_rec_sconces" } },
-    { "id": "rec.fan",        "name": "Fan light",     "room": "rec",     "type": "fan",     "pos": [5.2, 9.6],
+    { "id": "rec.fan",        "name": "Fan light",     "room": "rec",     "type": "fan",     "pos": [5.2, 9.6], "fan": "fan.demo_rec_fan",
       "link": { "service": "homeassistant", "id": "light.demo_rec_fan_light" } },
     { "id": "rec.dome",       "name": "Entry",         "room": "rec",     "type": "dome",    "pos": [1.85, 8.9],
-      "link": { "service": "homeassistant", "id": "light.demo_rec_dome" } }
+      "link": { "service": "homeassistant", "id": "light.demo_rec_dome" } },
+
+    { "id": "bar.pendants",   "name": "Poker table",   "room": "bar",     "type": "pendantBar", "pos": [2.2, 2.7], "y": 1.5,
+      "length": 1.2, "link": { "service": "homeassistant", "id": "light.demo_bar_pendants" } },
+    { "id": "bar.cans",       "name": "Cans",          "room": "bar",     "type": "cans",    "pos": [2.6, 1.6],
+      "points": [[1.2, 1.4], [4.0, 1.4], [1.2, 3.6], [4.0, 3.6]],
+      "link": { "service": "homeassistant", "id": "light.demo_bar_cans" } },
+    { "id": "gym.main",       "name": "Ceiling",       "room": "gym",     "type": "ceiling", "pos": [8.4, 2.2],
+      "link": { "service": "homeassistant", "id": "light.demo_gym_ceiling" } },
+    { "id": "utility.main",   "name": "Light",         "room": "utility", "type": "dome",    "pos": [12.0, 2.2],
+      "link": { "service": "homeassistant", "id": "light.demo_utility_light" } }
   ],
 
   "acs": [
@@ -132,7 +175,11 @@
 
   "entities": [
     { "id": "living.tv_player", "name": "TV",          "room": "living",  "entity": "media_player.demo_tv",
-      "pos": [0.5, 5.0], "y": 1.6, "icon": "tv", "tap": "more-info", "hold": "toggle" },
+      "pos": [0.5, 5.0], "y": 1.6, "icon": "tv",
+      "tap_action": { "action": "more-info" },
+      "hold_action": { "action": "perform-action", "perform_action": "media_player.media_play_pause",
+                       "target": { "entity_id": "media_player.demo_tv" }, "confirmation": { "text": "Play or pause the TV?" } },
+      "double_tap_action": { "action": "toggle" } },
     { "id": "bedroom.fan",      "name": "Ceiling fan", "room": "bedroom", "entity": "fan.demo_bedroom_fan",
       "pos": [2.1, 1.2], "y": 2.2, "icon": "fan", "tap": "toggle" },
     { "id": "kitchen.coffee",   "name": "Coffee maker", "room": "kitchen", "entity": "switch.demo_coffee_maker",
@@ -145,6 +192,11 @@
       "pos": [13.3, 7.4], "y": 1.3, "icon": "garage" },
     { "id": "hall.porch_cam",   "name": "Porch camera", "room": "hall",   "entity": "camera.demo_porch",
       "pos": [12.9, 8.0], "y": 2.2, "icon": "camera" }
+  ],
+
+  "people": [
+    { "name": "Demo Person", "entity": "sensor.demo_person_area", "color": "#7ac8ff" },
+    { "name": "Demo Guest", "entity": "sensor.demo_guest_area", "color": "#ffb46b" }
   ],
 
   "scenes": [
@@ -162,7 +214,8 @@
         "hall.main":      { "on": true, "brightness": 0.3, "temp": 2400 }
       } },
     { "id": "movie", "name": "Movie", "icon": "film", "run": "script.demo_movie_mode" },
-    { "id": "night", "name": "Night", "icon": "moon", "run": "scene.demo_good_night" },
+    { "id": "night", "name": "Night", "icon": "moon", "run": "scene.demo_good_night",
+      "active_when": { "entity": "input_boolean.demo_night_mode", "state": "on" } },
     { "id": "away", "name": "Away", "icon": "door",
       "lights": { "*": { "on": false } },
       "acs": { "*": { "on": false } } }

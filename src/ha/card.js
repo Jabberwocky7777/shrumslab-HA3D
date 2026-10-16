@@ -11,9 +11,18 @@ import { validatePlan, haLink } from './validate.js';
 import { createHaBridge } from './bridge.js';
 import { EntityMarker } from './markers.js';
 import { entityTile, runAction, lookOf, labelOf } from './entities.js';
-import { domainOf, RUN_DOMAINS } from './sensitive.js';
+import { domainOf, RUN_DOMAINS, canBulk } from './sensitive.js';
+import { defaultFloor, floorLights } from './floors.js';
+import { createFloorBar } from './floor-bar.js';
+import { DEFAULT_QUALITY } from './light-pool.js';
+import { isActive } from './conditions.js';
+import { createLive, daylightOf, wattsLabel } from './live.js';
+import { liveEntities } from './live-fields.js';
+import { icon as iconEl } from '../../upstream/ui/icons.js';
+import { checkOptions } from './options.js';
 import { savePlan, exportPlan, pickPlanFile, diffPlans, deepEqual, SaveFallback } from './plan-store.js';
 import { openEditor } from './editor-dialog.js';
+import { HouseControlCardEditor, ensureHaForm } from './card-editor.js';
 import demoPlan from '../../plans/demo.json';
 
 const TEARDOWN_DELAY = 400; // a card moved around the DOM is disconnected and connected again at once
@@ -21,6 +30,12 @@ const TEARDOWN_DELAY = 400; // a card moved around the DOM is disconnected and c
 export class HouseControlCard extends HTMLElement {
   static getStubConfig() {
     return { plan: structuredClone(demoPlan) };
+  }
+
+  // Home Assistant's dashboard editor: the card's options with ha-form, and "Edit home…".
+  static async getConfigElement() {
+    await ensureHaForm();
+    return document.createElement('house-control-card-editor');
   }
 
   constructor() {
@@ -43,6 +58,7 @@ export class HouseControlCard extends HTMLElement {
       throw new Error('This card needs a "plan:". Start from the demo plan in the README, or add the card from the card picker.');
     }
     validatePlan(config.plan); // throws a ConfigError with a readable message: Home Assistant shows it
+    checkOptions(config);
     if (this._config && deepEqual(config, this._config)) return;
     this._config = config;
     if (config.height) this.style.setProperty('--hc-height', String(config.height));
@@ -53,6 +69,7 @@ export class HouseControlCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    this.toggleAttribute('light-theme', hass?.themes?.darkMode === false); // the panel follows the theme
     if (this._ui) this._ui.update(hass);
     else this._build();
   }
@@ -217,6 +234,16 @@ function buildUi(card, plan, firstHass) {
   }
 
   const markers = new Map(config.entities.map((e) => [e.id, new EntityMarker(e)]));
+  const live = createLive(config); // doors, locks, garage doors, occupancy, people, heat map, fans, TVs
+  const heatToggle = live.hasHeatmap ? h('button.room.heat-toggle', {
+    'aria-pressed': 'false', title: 'Heat map',
+    onclick: () => {
+      haptic('tick');
+      live.setHeatmap(!live.heatmap);
+      heatToggle.classList.toggle('active', live.heatmap);
+      heatToggle.setAttribute('aria-pressed', String(live.heatmap));
+    },
+  }, iconEl('thermo', 14), 'Heat map') : null;
   const entityCfg = new Map(config.entities.map((e) => [e.id, e]));
   const nameOf = (id) => store.lightCfg.get(id)?.name || store.acCfg.get(id)?.name || entityCfg.get(id)?.name || id;
   let panel = null;
@@ -224,37 +251,105 @@ function buildUi(card, plan, firstHass) {
   const toast = (text) => panel?.toast(text);
   const onAction = (result, error) => { if (error) toast(error.message || String(error)); };
 
+  // A script or scene (scene and floor buttons with `run`): only RUN_DOMAINS ever start.
+  function runEntity(name, entity) {
+    const domain = domainOf(entity);
+    if (!RUN_DOMAINS.has(domain)) return; // validation already refuses anything else
+    hass.callService(domain, 'turn_on', { entity_id: entity })
+      .then(() => toast(`${name} started`), (e) => { haptic('error'); toast(`${name}: ${e.message}`); });
+  }
+
+  /* ---------- floors ---------- */
+
+  const firstFloor = defaultFloor(config);
+  const startStacked = Boolean(card._config.stacked_view_default) && config.multiFloor;
+  function selectFloor(id) {
+    world?.setFloor(id);
+    panel?.selectFloor(id);
+    floorBar.set(id);
+  }
+  const floorBar = createFloorBar(config, {
+    floor: firstFloor,
+    stacked: startStacked,
+    onSelect: selectFloor,
+    onStacked: (on) => world?.setStacked(on),
+  });
+  // A light with its own tap_action / hold_action / double_tap_action (instead of toggle / its sheet).
+  function lightAction(cfg, which) {
+    if (!cfg[`${which}_action`]) return false;
+    runAction(card, hass, { ...cfg, entity: haLink(cfg) }, which);
+    return true;
+  }
+
+  // A floor's buttons: its `actions`, or All on / All off for its own lights. The implicit floor
+  // of a plan without "floors" has none: the list's All on / All off already do that.
+  function floorActions(floorId) {
+    const floor = config.floors.find((f) => f.id === floorId);
+    if (!floor || floor.implicit) return [];
+    return floor.actions.map((a) => ({
+      id: a.id, name: a.name, icon: a.icon,
+      active: () => isActive(a.activeWhen, hass.states),
+      run() {
+        if (a.run) { runEntity(a.name, a.run); return; }
+        const on = a.builtin === 'all_on';
+        for (const l of floorLights(config, floor.id, { haLink, canBulk })) store.setLight(l.id, { on });
+      },
+    }));
+  }
+
   panel = createPanel(root, config, store, {
     onFocus: (target) => world?.focus(target),
     onMenu: (anchor, reason) => { if (reason !== 'escape' && anchor) card._menu(anchor, panel.anchorMenu); },
     onScene(scene) {
       if (!scene.run) { store.applyScene(scene.id); return; }
-      const domain = domainOf(scene.run);
-      if (!RUN_DOMAINS.has(domain)) return; // validation already refuses anything else
-      hass.callService(domain, 'turn_on', { entity_id: scene.run })
-        .then(() => toast(`${scene.name} started`), (e) => { haptic('error'); toast(`${scene.name}: ${e.message}`); });
+      runEntity(scene.name, scene.run);
     },
     entityTile: (cfg) => entityTile(cfg, { host: card, getHass, onAction }),
     availability: bridge.availability,
     tempUnit: unit,
+    floor: firstFloor,
+    floorBar: floorBar.el,
+    floorActions,
+    lightAction,
+    sceneActive: (scene) => (scene?.run ? isActive(scene.activeWhen, hass.states) : null),
+    roomNote: (id) => live.roomReading(id),
+    lightNote: (cfg, on) => live.lightPower(cfg, on),
+    roomsTrailer: heatToggle,
+    headerExtra() {
+      const out = [];
+      const watts = card._config.power ? wattsLabel(hass.states[card._config.power]) : null;
+      if (watts) out.push(h('span.house-power', ` · ${watts}`));
+      const away = live.away();
+      if (away.length) out.push(h('span.away', ` · ${away.join(', ')} away`));
+      return out;
+    },
   });
 
   world = createWorld(panel.canvas, config, store, {
     onHover: panel.showTooltip,
     entities: markers,
+    live: live.units,
+    quality: card._config.quality || DEFAULT_QUALITY,
     onPick(target) {
       if (!target) return;
       if (target.kind === 'light') {
         const missing = bridge.availability('light', target.id);
         if (missing) { toast(`${nameOf(target.id)}: ${missing}`); return; }
         haptic('light');
-        store.toggleLight(target.id);
+        if (!lightAction(store.lightCfg.get(target.id), 'tap')) store.toggleLight(target.id);
       } else if (target.kind === 'ac') {
         const missing = bridge.availability('ac', target.id);
         if (missing) toast(`${nameOf(target.id)}: ${missing}`);
         else panel.openSheet(target);
       } else if (target.kind === 'room') {
+        // In the stacked view a tap on another floor selects that floor first.
+        const floorId = world.floorOfRoom(target.id);
+        if (floorId !== world.floor) { haptic('tick'); selectFloor(floorId); return; }
         panel.selectRoom(target.id);
+      } else if (target.kind === 'live') {
+        // a lock, a garage door or a TV: always Home Assistant's own dialog
+        const entity = live.entityOf(target.id);
+        if (entity) runAction(card, hass, { entity, tap_action: { action: 'more-info' } }, 'tap');
       } else if (target.kind === 'entity') {
         markers.get(target.id)?.bump();
         Promise.resolve(runAction(card, hass, entityCfg.get(target.id), 'tap')).then(onAction, (e) => onAction(null, e));
@@ -262,6 +357,9 @@ function buildUi(card, plan, firstHass) {
     },
   });
   panel.attach(world);
+  live.attach(world);
+  world.setFloor(firstFloor);
+  if (startStacked) world.setStacked(true);
 
   store.onDeviceError = (id, message) => {
     toast(`${nameOf(id)}: ${message}`);
@@ -311,10 +409,33 @@ function buildUi(card, plan, firstHass) {
     return any;
   }
 
+  // Scenes and floor buttons with active_when light up from these entities' states; the live
+  // layer, the house power and the sun follow theirs.
+  const sunOn = Boolean(card._config.sun);
+  const conditionEntities = [
+    ...config.scenes.flatMap((s) => s.activeWhen || []).map((c) => c.entity),
+    ...config.floors.flatMap((f) => f.actions.flatMap((a) => a.activeWhen || [])).map((c) => c.entity),
+    ...liveEntities(config),
+    ...(card._config.power ? [card._config.power] : []),
+    ...(sunOn ? ['sun.sun'] : []),
+  ];
+  let seenConditions = [];
+  function conditionsChanged() {
+    const now = conditionEntities.map((e) => hass.states[e]);
+    const changed = now.some((st, i) => st !== seenConditions[i]);
+    seenConditions = now;
+    return changed;
+  }
+
   function syncNow(force = false) {
     const devices = bridge.sync(hass, store, { force });
     const entities = syncEntities(force);
-    if (devices || entities) { panel.refresh(); world.wake(); }
+    const conditions = conditionsChanged();
+    if (conditions || force) {
+      live.sync(hass.states);
+      if (sunOn) world.setDaylight(daylightOf(hass.states['sun.sun']));
+    }
+    if (devices || entities) { panel.refresh(); world.wake(); } else if (conditions) panel.refresh();
   }
   syncNow(true);
 
@@ -348,12 +469,13 @@ function buildUi(card, plan, firstHass) {
     setVisible(on) { visible = on; applyRunning(); },
     toast,
     // for the render test and the browser console
-    get debug() { return { store, world, config, markers }; },
+    get debug() { return { store, world, panel, config, markers, live, get lightPool() { return world.lightPool(); } }; },
     dispose() {
       listeners.abort();
       io.disconnect();
       resizer.disconnect();
       bridge.dispose();
+      live.dispose();
       panel.dispose();
       world.dispose();
       store.dispose();
@@ -374,6 +496,7 @@ export function register() {
   const version = typeof __CARD_VERSION__ === 'string' ? __CARD_VERSION__ : 'dev';
   console.info(`%c HOUSE-CONTROL-CARD %c ${version} `, 'color:#fff;background:#41bdf5', 'color:#41bdf5');
   if (!customElements.get('house-control-card')) customElements.define('house-control-card', HouseControlCard);
+  if (!customElements.get('house-control-card-editor')) customElements.define('house-control-card-editor', HouseControlCardEditor);
   window.customCards = window.customCards || [];
   if (!window.customCards.some((c) => c.type === 'house-control-card')) {
     window.customCards.push({

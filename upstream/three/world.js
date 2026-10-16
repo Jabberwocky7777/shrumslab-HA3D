@@ -8,6 +8,8 @@ import { buildHouse } from './house.js';
 import { buildFurniture } from './furniture.js';
 import { LightUnit } from './lights.js';
 import { ACUnit } from './ac.js';
+import { floorView, floorOfRoom, defaultFloor } from '../../src/ha/floors.js'; // ha3d: floors
+import { createLightPool, QUALITY, DEFAULT_QUALITY, NO_SHADOW_TYPES } from '../../src/ha/light-pool.js'; // ha3d: light budget
 
 export const STAGE_BG = '#0a0e1a';
 
@@ -18,12 +20,22 @@ const EL_MIN = 26;
 const EL_MAX = 70;
 const ZOOM_MIN = 0.55;     // closest
 const ZOOM_MAX = 1.2;
+const STACK_GAP = 2.6;     // ha3d: metres between floors in the stacked view
+const STACK_EL = 26;       // ha3d: a lower camera there, so the floors read as layers
+const DIM_OPACITY = 0.2;   // ha3d: floors that are not selected, in the stacked view
 
 // ha3d: `entities` is a Map of extra units (src/ha/markers.js) drawn and picked like the lamps:
 // each has { group, hit, anchor(v), update(dt) } and its hit mesh carries { kind: 'entity', id }.
-export function createWorld(canvas, config, store, { onHover, onPick, background = STAGE_BG, entities = new Map() }) {
+// ha3d: `quality` (low | medium | high) sizes the light pool, bloom, multisampling and pixel ratio.
+// ha3d: `live` (src/ha/live.js) are more units { id, room | floor, group, hit?, update(dt) } drawn on
+// their floor; their hit meshes carry { kind: 'live', id }.
+export function createWorld(canvas, config, store, { onHover, onPick, background = STAGE_BG, entities = new Map(), quality = DEFAULT_QUALITY, live = [] }) {
+  const q = QUALITY[quality] || QUALITY[DEFAULT_QUALITY]; // ha3d
+  // ha3d: prefers-reduced-motion: no intro fly-in, no pulses, the camera jumps instead of gliding
+  const motion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const still = () => Boolean(motion?.matches);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio)); // ha3d
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
@@ -36,7 +48,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   const camera = new THREE.PerspectiveCamera(24, 1, 0.5, 120);
 
   const { minX, minZ, maxX, maxZ } = config.bounds;
-  const H = config.wallHeight;
+  // ha3d: the wall height is per floor now (levels below)
   const center = new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
   const span = Math.max(maxX - minX, maxZ - minZ);
 
@@ -45,28 +57,55 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
 
   /* ---------- content ---------- */
 
-  const house = buildHouse(config, camDir);
-  scene.add(house.group);
-  scene.add(buildFurniture(config.furniture));
+  // ha3d: one group per floor (src/ha/floors.js), each drawn as its own house. A plan without
+  // "floors" has a single one, so it renders exactly as upstream's.
+  const floorOf = floorOfRoom(config);
+  const levels = new Map(); // floor id -> { cfg, group, house, H, y, goalY, hits, dimmed }
+  for (const f of config.floors) {
+    const view = floorView(config, f.id);
+    const group = new THREE.Group();
+    const house = buildHouse(view, camDir);
+    group.add(house.group, buildFurniture(view.furniture));
+    scene.add(group);
+    levels.set(f.id, { cfg: f, group, house, H: f.height, y: 0, goalY: 0, hits: [...house.floors], dimmed: false });
+  }
+  const levelOf = (roomId) => levels.get(floorOf.get(roomId)) || levels.values().next().value;
+  let current = defaultFloor(config);
+  let stacked = false;
 
   const lights = new Map();
   for (const cfg of config.lights) {
-    const unit = new LightUnit(cfg, H);
+    const level = levelOf(cfg.room);
+    const unit = new LightUnit(cfg, level.H);
     lights.set(cfg.id, unit);
-    scene.add(unit.group);
+    level.group.add(unit.group);
+    level.hits.push(unit.hit);
   }
   const acs = new Map();
   for (const cfg of config.acs) {
+    const level = levelOf(cfg.room);
     const unit = new ACUnit(cfg);
     acs.set(cfg.id, unit);
-    scene.add(unit.group);
+    level.group.add(unit.group);
+    level.hits.push(unit.hit);
   }
-  for (const unit of entities.values()) scene.add(unit.group); // ha3d
-  const hitTargets = [...[...lights.values()].map((u) => u.hit), ...[...acs.values()].map((u) => u.hit),
-    ...[...entities.values()].map((u) => u.hit), ...house.floors];
+  for (const unit of entities.values()) {
+    const level = levelOf(unit.cfg.room);
+    level.group.add(unit.group);
+    level.hits.push(unit.hit);
+  }
+  for (const unit of live) { // ha3d
+    const level = unit.floor ? levels.get(unit.floor) : levelOf(unit.room);
+    if (!level) continue;
+    level.group.add(unit.group);
+    if (unit.hit) level.hits.push(unit.hit);
+  }
+  // What a tap can reach: the shown floor, and in the stacked view the rooms of the others.
+  let hitTargets = [];
 
   // Night-time ambience: enough to read the model with every lamp off.
-  scene.add(new THREE.HemisphereLight(0x8ea6ff, 0x0b0e17, 0.42));
+  const hemi = new THREE.HemisphereLight(0x8ea6ff, 0x0b0e17, 0.42); // ha3d: named, for daylight
+  scene.add(hemi);
   const moon = new THREE.DirectionalLight(0xa9c0ff, 0.6);
   // Steep and coming from the viewer's side, so the faces we look at stay readable.
   moon.position.copy(center).add(new THREE.Vector3(camDir.x * 3.2 + 1.5, 10, camDir.z * 3.2 - 1.5));
@@ -83,13 +122,31 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   moon.shadow.radius = 4;
   scene.add(moon, moon.target);
 
+  // ha3d: fixtures (and entity markers) only describe their lights; a fixed pool of real ones
+  // lights the ones that matter (src/ha/light-pool.js).
+  const sources = [];
+  for (const unit of lights.values()) {
+    unit.lights.forEach((light, index) => sources.push({
+      id: unit.id, index, unit, light, floor: floorOf.get(unit.cfg.room), decal: true,
+      shadow: light.castShadow && !NO_SHADOW_TYPES.has(unit.cfg.type),
+    }));
+  }
+  for (const unit of entities.values()) {
+    if (unit.light) sources.push({ id: unit.id, index: 0, unit, light: unit.light, floor: floorOf.get(unit.cfg.room), shadow: false, decal: false, weight: 0.35 });
+  }
+  let shownFloors = new Map(); // floor id -> weight, set by layout()
+  const pool = createLightPool(scene, renderer, {
+    quality, sources,
+    getFocus: () => ({ target: rig.goal.target, floors: shownFloors, key: `${rig.focus?.kind}:${rig.focus?.id}` }),
+  });
+
   /* ---------- post-processing ---------- */
 
-  const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
+  const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: q.samples }); // ha3d: quality
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.34, 0.5, 1.0);
-  composer.addPass(bloom);
+  // ha3d: low quality skips bloom, the most expensive pass on a phone
+  if (q.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(4, 4), 0.34, 0.5, 1.0));
   composer.addPass(new OutputPass());
 
   /* ---------- camera rig ---------- */
@@ -133,23 +190,35 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     return { dist, center: c };
   }
 
+  // ha3d: floors. Boxes are lifted to the floor's height in the stacked view.
+  function floorBox(level, top = 0.8) {
+    const { minX: x0, minZ: z0, maxX: x1, maxZ: z1 } = level.cfg.bounds;
+    return new THREE.Box3(new THREE.Vector3(x0, level.goalY, z0), new THREE.Vector3(x1, level.goalY + level.H * top, z1));
+  }
+
   function frameGoal() {
     const f = rig.focus;
     let box;
     let fill = 0.96;
     if (f?.kind === 'room') {
       const r = config.rooms.find((x) => x.id === f.id);
-      box = new THREE.Box3(new THREE.Vector3(r.x, 0, r.z), new THREE.Vector3(r.x + r.w, H * 0.75, r.z + r.d));
+      const level = levelOf(r.id); // ha3d
+      box = new THREE.Box3(new THREE.Vector3(r.x, level.goalY, r.z), new THREE.Vector3(r.x + r.w, level.goalY + level.H * 0.75, r.z + r.d));
       fill = 0.84;
     } else if (f?.kind === 'ac') {
       const unit = acs.get(f.id);
       const p = unit.group.position;
+      const y = levelOf(unit.cfg.room).goalY; // ha3d
       const out = new THREE.Vector3(0, 0, 1).applyQuaternion(unit.group.quaternion);
       box = new THREE.Box3().setFromCenterAndSize(
-        new THREE.Vector3(p.x + out.x * 1.3, 1.25, p.z + out.z * 1.3), new THREE.Vector3(3.6, 2.6, 3.6));
+        new THREE.Vector3(p.x + out.x * 1.3, y + 1.25, p.z + out.z * 1.3), new THREE.Vector3(3.6, 2.6, 3.6));
       fill = 0.92;
-    } else {
-      box = new THREE.Box3(new THREE.Vector3(minX, 0, minZ), new THREE.Vector3(maxX, H * 0.8, maxZ));
+    } else if (stacked && f?.kind !== 'floor') { // ha3d: the whole stack
+      box = new THREE.Box3();
+      for (const level of levels.values()) box.union(floorBox(level));
+      fill = 0.9;
+    } else { // ha3d: the selected floor
+      box = floorBox(levels.get(f?.kind === 'floor' ? f.id : current));
     }
     const { dist, center: c } = fitDistance(box, rig.goal.az, rig.goal.el, fill);
     rig.goal.dist = dist * rig.zoom;
@@ -157,7 +226,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   }
 
   function updateRig(dt, instant = false) {
-    const k = instant ? 1 : 1 - Math.exp(-dt * 5.5);
+    const k = instant || still() ? 1 : 1 - Math.exp(-dt * 5.5); // ha3d: reduced motion
     const g = rig.goal;
     const delta = Math.abs(g.az - rig.az) + Math.abs(g.el - rig.el) + Math.abs(g.dist - rig.dist) * 2
       + rig.target.distanceTo(g.target) * 4;
@@ -165,11 +234,17 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     rig.el += (g.el - rig.el) * k;
     rig.dist += (g.dist - rig.dist) * k;
     rig.target.lerp(g.target, k);
+    let lifting = false; // ha3d: floors sliding apart or together
+    for (const level of levels.values()) {
+      if (Math.abs(level.goalY - level.y) < 0.002) level.y = level.goalY;
+      else { level.y += (level.goalY - level.y) * k; lifting = true; }
+      level.group.position.y = level.y;
+    }
     basis(rig.az, rig.el);
     camera.position.copy(rig.target).addScaledVector(fwd, -rig.dist);
     camera.up.set(0, 1, 0);
     camera.lookAt(rig.target);
-    return delta > 0.002;
+    return delta > 0.002 || lifting;
   }
 
   /* ---------- state sync ---------- */
@@ -323,10 +398,15 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     raf = 0;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    if (still()) for (const unit of [...lights.values(), ...entities.values()]) unit.pulse = 0; // ha3d
     let active = updateRig(dt);
     for (const unit of lights.values()) active = unit.update(dt) || active;
     for (const unit of acs.values()) active = unit.update(dt) || active;
     for (const unit of entities.values()) active = unit.update(dt) || active; // ha3d
+    for (const unit of live) active = unit.update(dt) || active; // ha3d
+    if (active || awake > 0) {
+      if (pool.sync()) shadowFrames = Math.max(shadowFrames, 2); // ha3d: new lights, new shadow maps
+    }
     if (shadowFrames > 0) { renderer.shadowMap.needsUpdate = true; shadowFrames--; active = true; }
     if (active || awake > 0) {
       composer.render(dt);
@@ -341,7 +421,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     if (!r.width || !r.height) return;
     width = r.width;
     height = r.height;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = Math.min(window.devicePixelRatio || 1, q.pixelRatio); // ha3d: quality
     renderer.setPixelRatio(pr);
     renderer.setSize(width, height, false);
     composer.setPixelRatio(pr);
@@ -354,6 +434,69 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     wake(3);
   }
 
+  let daylight = 0; // ha3d: setDaylight()
+
+  /* ---------- ha3d: floors ---------- */
+
+  const dimmed = new Map(); // original material -> its see-through copy
+  const dimMaterial = (m) => {
+    if (!dimmed.has(m)) {
+      const c = m.clone();
+      c.transparent = true;
+      c.opacity = m.opacity * DIM_OPACITY;
+      c.depthWrite = false;
+      dimmed.set(m, c);
+    }
+    return dimmed.get(m);
+  };
+
+  function dim(level, on) {
+    if (level.dimmed === on) return;
+    level.dimmed = on;
+    level.group.traverse((o) => {
+      if (!(o.isMesh || o.isSprite) || o.userData.kind === 'light' || o.userData.kind === 'ac' || o.userData.kind === 'entity') return; // hit boxes
+      if (on) {
+        o.userData.ha3dLook = { material: o.material, cast: o.castShadow };
+        o.material = Array.isArray(o.material) ? o.material.map(dimMaterial) : dimMaterial(o.material);
+        o.castShadow = false;
+      } else if (o.userData.ha3dLook) {
+        o.material = o.userData.ha3dLook.material;
+        o.castShadow = o.userData.ha3dLook.cast;
+        delete o.userData.ha3dLook;
+      }
+    });
+  }
+
+  function layout() {
+    // Lowest floor at 0, each next one above the previous, pulled apart a little.
+    let y = 0;
+    for (const f of config.floors) {
+      const level = levels.get(f.id);
+      level.goalY = stacked ? y : 0;
+      y += level.H + STACK_GAP;
+      const shown = stacked || f.id === current;
+      // A floor that appears or disappears jumps; the shown ones slide.
+      if (!shown || !level.group.visible) { level.y = level.goalY; level.group.position.y = level.y; }
+      level.group.visible = shown;
+      dim(level, stacked && f.id !== current);
+    }
+    shownFloors = new Map(config.floors
+      .filter((f) => stacked || f.id === current)
+      .map((f) => [f.id, f.id === current ? 1 : 0.3])); // ha3d: dimmed floors rank lower in the light pool
+    const top = stacked ? y : 0;
+    moon.position.y = 10 + top;
+    moon.shadow.camera.far = 30 + top;
+    moon.shadow.camera.updateProjectionMatrix();
+    hitTargets = [];
+    for (const [id, level] of levels) {
+      if (id === current) hitTargets.push(...level.hits);
+      else if (stacked) hitTargets.push(...level.house.floors);
+    }
+    shadowFrames = 3;
+    frameGoal();
+    wake(4);
+  }
+
   const world = {
     lights,
     acs,
@@ -361,19 +504,73 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     wake, // ha3d: something outside the store (Home Assistant state of an entity) changed
 
     setInsets(top, bottom) { topInset = top; bottomInset = bottom; resize(); },
+
+    // ha3d: floors. `setFloor` shows one floor (and flies to it in the stacked view);
+    // `setStacked` draws every floor one above the other, the others dimmed.
+    get floor() { return current; },
+    get stacked() { return stacked; },
+    floorOfRoom: (roomId) => floorOf.get(roomId),
+    floorsShown: () => [...levels].map(([id, l]) => ({ id, visible: l.group.visible, dimmed: l.dimmed })), // for tests
+    lightPool: () => pool.debug(), // ha3d: which fixture each real light shows
+    floorGroup: (id) => levels.get(id)?.group ?? null, // ha3d: people move between floors
+    // ha3d: the furniture items drawn from the plan, with their models: [{ item, group, floor }]
+    findFurniture(test) {
+      const out = [];
+      for (const [floor, level] of levels) {
+        level.group.traverse((o) => { if (o.userData.item && test(o.userData.item)) out.push({ item: o.userData.item, group: o, floor }); });
+      }
+      return out;
+    },
+    // ha3d: 0 = upstream's night, 1 = daylight: sky, ambient light and the outdoor (moon / sun) light
+    get daylight() { return daylight; }, // ha3d
+    // ha3d: where an object is on the canvas, in CSS pixels (tests tap 3D things through it)
+    screenOf(object) {
+      object.getWorldPosition(v).project(camera);
+      return { x: (v.x * 0.5 + 0.5) * width, y: (-v.y * 0.5 + 0.5) * height, visible: v.z < 1 };
+    },
+    setDaylight(t) {
+      const k = clamp(t, 0, 1);
+      daylight = k;
+      scene.background.set(background).lerp(DAY.sky, k);
+      hemi.color.set(0x8ea6ff).lerp(DAY.hemiSky, k);
+      hemi.groundColor.set(0x0b0e17).lerp(DAY.hemiGround, k);
+      hemi.intensity = 0.42 + (1.2 - 0.42) * k;
+      moon.color.set(0xa9c0ff).lerp(DAY.sun, k);
+      moon.intensity = 0.6 + (2.3 - 0.6) * k;
+      shadowFrames = Math.max(shadowFrames, 1);
+      wake();
+    },
+    rigDelta: () => Math.abs(rig.goal.az - rig.az) + Math.abs(rig.goal.el - rig.el) + Math.abs(rig.goal.dist - rig.dist) + rig.target.distanceTo(rig.goal.target), // ha3d: for tests
+    setFloor(id) {
+      if (!levels.has(id) || id === current) return;
+      current = id;
+      rig.focus = stacked ? { kind: 'floor', id } : null;
+      rig.zoom = 1;
+      layout();
+    },
+    setStacked(on) {
+      if (stacked === Boolean(on)) return;
+      stacked = Boolean(on);
+      rig.focus = null;
+      rig.zoom = 1;
+      rig.goal.az = baseAz;
+      rig.goal.el = stacked ? STACK_EL : config.camera.elevation;
+      layout();
+    },
     resize,
 
     focus(next) {
-      rig.focus = next;
+      rig.focus = next || (stacked ? { kind: 'floor', id: current } : null); // ha3d
       rig.zoom = 1;
       rig.goal.az = baseAz + (next?.kind === 'ac' ? (WALL_SIDE[acs.get(next.id).cfg.wall] ?? 0) : 0);
-      rig.goal.el = next?.kind === 'ac' ? 30 : config.camera.elevation;
+      rig.goal.el = next?.kind === 'ac' ? 30 : stacked ? STACK_EL : config.camera.elevation; // ha3d: stacked
       frameGoal();
       wake();
     },
 
     // Camera sweep + staggered light-up, played whenever the panel appears.
     intro() {
+      if (still()) { syncAll({ instant: true }); frameGoal(); updateRig(0, true); wake(4); return; } // ha3d
       syncAll({ instant: true });
       for (const unit of lights.values()) { unit.level = 0; unit.write(); }
       for (const unit of acs.values()) unit.power = 0;
@@ -405,6 +602,8 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
         for (const m of [].concat(o.material || [])) { m.map?.dispose(); m.dispose(); }
         o.shadow?.map?.dispose();
       });
+      for (const m of dimmed.values()) m.dispose(); // ha3d
+      pool.dispose(); // ha3d
       renderer.dispose();
       renderer.forceContextLoss();
     },
@@ -416,17 +615,25 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
         for (const unit of lights.values()) unit.update(0.05);
         for (const unit of acs.values()) unit.update(0.05);
         for (const unit of entities.values()) unit.update(0.05); // ha3d
+        for (const unit of live) unit.update(0.05); // ha3d
       }
+      pool.sync(true); // ha3d
       renderer.shadowMap.needsUpdate = true;
       composer.render(0);
     },
   };
 
   syncAll({ instant: true });
+  layout(); // ha3d: floors
   resize();
   updateRig(0, true);
   return world;
 }
+
+// ha3d: the daylight end of setDaylight()
+const DAY = {
+  sky: new THREE.Color('#9cbfe2'), hemiSky: new THREE.Color('#e4f0ff'), hemiGround: new THREE.Color('#5d5246'), sun: new THREE.Color('#fff0d8'),
+};
 
 // Looking at an AC slightly from the side shows its airflow better.
 const WALL_SIDE = { north: -14, west: 14, south: 0, east: 0 };
