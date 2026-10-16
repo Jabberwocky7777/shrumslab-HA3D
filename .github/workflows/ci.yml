@@ -58,7 +58,7 @@ jobs:
 
       - name: Screenshots (demo house only)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: render-test
           path: test-results/
