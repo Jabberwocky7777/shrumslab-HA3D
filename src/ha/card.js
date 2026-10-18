@@ -12,7 +12,8 @@ import { createHaBridge } from './bridge.js';
 import { EntityMarker } from './markers.js';
 import { entityTile, runAction, lookOf, labelOf } from './entities.js';
 import { domainOf, RUN_DOMAINS, canBulk } from './sensitive.js';
-import { defaultFloor, floorLights } from './floors.js';
+import { defaultFloor, floorLights, confirmationText } from './floors.js';
+import { openConfirmSheet } from './confirm-sheet.js';
 import { createFloorBar } from './floor-bar.js';
 import { DEFAULT_QUALITY } from './light-pool.js';
 import { isActive } from './conditions.js';
@@ -64,6 +65,7 @@ export class HouseControlCard extends HTMLElement {
     if (config.height) this.style.setProperty('--hc-height', String(config.height));
     else this.style.removeProperty('--hc-height');
     this.toggleAttribute('safe-area', Boolean(config.safe_area));
+    this.toggleAttribute('full-bleed', Boolean(config.full_bleed));
     this._rebuild();
   }
 
@@ -234,7 +236,7 @@ function buildUi(card, plan, firstHass) {
   }
 
   const markers = new Map(config.entities.map((e) => [e.id, new EntityMarker(e)]));
-  const live = createLive(config); // doors, locks, garage doors, occupancy, people, heat map, fans, TVs
+  const live = createLive(config, { lightOn: (id) => Boolean(store.state.lights[id]?.on) }); // doors, locks, garage doors, occupancy, people, heat map, fans, TVs
   const heatToggle = live.hasHeatmap ? h('button.room.heat-toggle', {
     'aria-pressed': 'false', title: 'Heat map',
     onclick: () => {
@@ -257,6 +259,13 @@ function buildUi(card, plan, firstHass) {
     if (!RUN_DOMAINS.has(domain)) return; // validation already refuses anything else
     hass.callService(domain, 'turn_on', { entity_id: entity })
       .then(() => toast(`${name} started`), (e) => { haptic('error'); toast(`${name}: ${e.message}`); });
+  }
+
+  // A floor button's `toggle`: only ever input_boolean.toggle on an input_boolean.
+  function toggleHelper(name, entity) {
+    if (domainOf(entity) !== 'input_boolean') return; // validation already refuses anything else
+    hass.callService('input_boolean', 'toggle', { entity_id: entity })
+      .catch((e) => { haptic('error'); toast(`${name}: ${e.message}`); });
   }
 
   /* ---------- floors ---------- */
@@ -286,13 +295,19 @@ function buildUi(card, plan, firstHass) {
   function floorActions(floorId) {
     const floor = config.floors.find((f) => f.id === floorId);
     if (!floor || floor.implicit) return [];
+    const perform = (a) => {
+      if (a.run) { runEntity(a.name, a.run); return; }
+      if (a.toggle) { toggleHelper(a.name, a.toggle); return; }
+      const on = a.builtin === 'all_on';
+      for (const l of floorLights(config, floor.id, { haLink, canBulk })) store.setLight(l.id, { on });
+    };
     return floor.actions.map((a) => ({
       id: a.id, name: a.name, icon: a.icon,
       active: () => isActive(a.activeWhen, hass.states),
       run() {
-        if (a.run) { runEntity(a.name, a.run); return; }
-        const on = a.builtin === 'all_on';
-        for (const l of floorLights(config, floor.id, { haLink, canBulk })) store.setLight(l.id, { on });
+        if (!a.confirmation) { perform(a); return; }
+        // the card's own sheet: never window.confirm or Home Assistant's dialog
+        openConfirmSheet(panel.anchorMenu, { name: a.name, iconName: a.icon, text: confirmationText(a), onConfirm: () => perform(a) });
       },
     }));
   }
@@ -345,7 +360,7 @@ function buildUi(card, plan, firstHass) {
         // In the stacked view a tap on another floor selects that floor first.
         const floorId = world.floorOfRoom(target.id);
         if (floorId !== world.floor) { haptic('tick'); selectFloor(floorId); return; }
-        panel.selectRoom(target.id);
+        panel.selectRoom(target.id); // a part of a room selects its main room
       } else if (target.kind === 'live') {
         // a lock, a garage door or a TV: always Home Assistant's own dialog
         const entity = live.entityOf(target.id);
@@ -432,7 +447,7 @@ function buildUi(card, plan, firstHass) {
     const entities = syncEntities(force);
     const conditions = conditionsChanged();
     if (conditions || force) {
-      live.sync(hass.states);
+      live.sync(hass.states, hass.areas);
       if (sunOn) world.setDaylight(daylightOf(hass.states['sun.sun']));
     }
     if (devices || entities) { panel.refresh(); world.wake(); } else if (conditions) panel.refresh();

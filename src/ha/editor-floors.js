@@ -155,21 +155,28 @@ export function createEditorFloors() {
       floor.actions ||= [];
       const { bind, text, number, choice, section, row, prop, optional, parseNum, optNum } = ctx;
       const change = (fn) => () => { ctx.snapshot(); fn(); ctx.touch(); };
-      const DOES = [['all_on', 'All on (this floor’s lights)'], ['all_off', 'All off (this floor’s lights)'], ['run', 'Run a script or scene']];
+      const DOES = [['all_on', 'All on (this floor’s lights)'], ['all_off', 'All off (this floor’s lights)'], ['run', 'Run a script or scene'], ['toggle', 'Toggle a helper (input_boolean)']];
 
       const actionBlock = (a, k) => {
-        const does = a.run != null ? 'run' : a.builtin || 'all_on';
+        const does = a.run != null ? 'run' : a.toggle != null ? 'toggle' : a.builtin || 'all_on';
         return h('div.e-action', { 'data-action': a.id },
           row(bind('Button', text(), prop(a, 'name', '')),
             bind('Icon', choice(ACTION_ICONS), { ...prop(a, 'icon', 'sun'), event: 'change' })),
           bind('What it does', choice(DOES), {
             get: () => does,
             set: (v) => {
-              if (v === 'run') { delete a.builtin; a.run = a.run || ''; } else { delete a.run; a.builtin = v; }
+              delete a.builtin; delete a.run; delete a.toggle;
+              if (v === 'run') a.run = ''; else if (v === 'toggle') a.toggle = ''; else a.builtin = v;
             },
             event: 'change',
           }),
           does === 'run' ? ctx.links.runField(a, ctx.linkHooks, { required: true }) : null,
+          does === 'toggle' ? ctx.links.toggleField(a, ctx.linkHooks) : null,
+          bind('Ask before running', h('input', { type: 'checkbox' }), {
+            get: () => Boolean(a.confirmation),
+            set: (v) => { if (v) a.confirmation = a.confirmation || true; else delete a.confirmation; },
+            event: 'change',
+          }),
           h('div.e-action-tools',
             h('button.btn', { 'aria-label': 'Move up', disabled: k === 0, onclick: change(() => floor.actions.splice(k - 1, 0, ...floor.actions.splice(k, 1))) }, icon('up', 14, 2.2)),
             h('button.btn', { 'aria-label': 'Move down', disabled: k === floor.actions.length - 1, onclick: change(() => floor.actions.splice(k + 1, 0, ...floor.actions.splice(k, 1))) }, icon('down', 14, 2.2)),
@@ -195,7 +202,7 @@ export function createEditorFloors() {
         section('Buttons',
           floor.actions.length ? floor.actions.map(actionBlock) : h('p.note', 'No buttons: the floor shows All on and All off for its own lights.'),
           h('button.btn', { onclick: addAction }, icon('plus', 14, 2.4), 'Add a button'),
-          h('p.note', 'Buttons only start scripts and scenes, or switch this floor’s lights. Locks, covers and other sensitive devices are never reached.')),
+          h('p.note', 'Buttons only start scripts and scenes, toggle input_boolean helpers, or switch this floor’s lights. Locks, covers and other sensitive devices are never reached.')),
       ];
     },
   };

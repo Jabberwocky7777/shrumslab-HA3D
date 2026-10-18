@@ -25,6 +25,7 @@ export function createHaBridge(config, { getHass, onSettled = () => {} }) {
   function availability(kind, id) {
     const cfg = kind === 'light' ? lightCfg.get(id) : acCfg.get(id);
     if (!cfg) return 'Not found';
+    if (cfg.placeholder) return 'Not connected'; // drawn, never switched: no All on / off, no scenes
     const entity = haLink(cfg);
     if (!entity) return cfg.link || cfg.tuya ? 'Not in Home Assistant' : null; // unlinked: simulated
     return availabilityOf(getHass()?.states?.[entity]);

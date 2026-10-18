@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { MARKER_COLORS, drawIcon } from './markers.js';
 import { availabilityOf } from './mapping.js';
+import { roomOfArea, largestRect } from './rooms.js';
 
 const ALERT = new THREE.Color(MARKER_COLORS.alert);
 const OK = new THREE.Color('#5fd38b');
@@ -30,13 +31,18 @@ export function heatColor(value, unit = '°C', out = new THREE.Color()) {
   return out.set(stops.at(-1)[1]);
 }
 
-/** The room a person is in: their entity's state is a Home Assistant area id or name. */
-export function personRoom(rooms, state) {
+/**
+ * The room a person is in: their entity's state is a Home Assistant area id or name, matched
+ * against each room's `area` entries (resolved both ways with the area registry `areas`, when
+ * there is one), else its name or id. A part of a room counts as its main room.
+ */
+export function personRoom(rooms, state, areas = null) {
   if (!state || state === 'not_home' || state === 'unknown' || state === 'unavailable') return null;
-  const s = String(state).toLowerCase();
-  return rooms.find((r) => r.area && r.area.toLowerCase() === s)
-    || rooms.find((r) => r.name.toLowerCase() === s || r.id.toLowerCase() === s) || null;
+  return roomOfArea(rooms, state, areas);
 }
+
+/** Turns per second of a fan without its own fan entity (`spin: "light"`): a medium speed while on. */
+export const LIGHT_FAN_SPEED = 0.5 * 2.2;
 
 /**
  * A media player's picture, only when Home Assistant serves it itself: a path on this origin
@@ -318,14 +324,14 @@ class FanSpinner {
   constructor(floor) {
     this.floor = floor;
     this.group = new THREE.Group();
-    this.items = []; // { entity, spin(angle) }
+    this.items = []; // { entity, spin(angle) } or { key, speed() (turns per second), spin(angle) }
     this.speeds = new Map();
   }
 
   update(dt) {
     let any = false;
     for (const item of this.items) {
-      const v = this.speeds.get(item.entity) || 0;
+      const v = item.speed ? item.speed() : this.speeds.get(item.entity) || 0;
       if (!v) continue;
       item.spin(v * Math.PI * 2 * dt);
       any = true;
@@ -340,7 +346,7 @@ class FanSpinner {
  * The live layer of one card. `units` go into createWorld's `live` option; `attach(world)` then
  * finds the fans and TVs the world built. `sync(states)` returns true when anything shown changed.
  */
-export function createLive(config) {
+export function createLive(config, { lightOn = () => false } = {}) {
   const units = [];
   const doors = [];
   const garages = [];
@@ -351,17 +357,20 @@ export function createLive(config) {
       units.push(u);
     }
   });
-  const glows = config.rooms.filter((r) => r.occupancy?.length).map((r) => {
+  // A part of a room glows and tints with its main room's sensors.
+  const roomById = new Map(config.rooms.map((r) => [r.id, r]));
+  const owner = (r) => (r.partOf ? roomById.get(r.partOf) : r);
+  const glows = config.rooms.filter((r) => owner(r).occupancy?.length).map((r) => {
     const u = new RoomTint(r, { additive: true, y: 0.016, fade: 0.8 }); // fades out over a few seconds
     u.max = 0.22;
-    u.cfg = r;
+    u.cfg = owner(r);
     units.push(u);
     return u;
   });
-  const heats = config.rooms.filter((r) => r.temperature).map((r) => {
+  const heats = config.rooms.filter((r) => owner(r).temperature).map((r) => {
     const u = new RoomTint(r, { additive: false, y: 0.02, fade: 5 });
     u.max = 0.5;
-    u.cfg = r;
+    u.cfg = owner(r);
     units.push(u);
     return u;
   });
@@ -390,6 +399,7 @@ export function createLive(config) {
   let world = null;
   let heatOn = false;
   let states = {};
+  let areas = null; // Home Assistant's area registry, when the card has it
   const loader = new THREE.TextureLoader();
 
   function attach(w) {
@@ -397,9 +407,13 @@ export function createLive(config) {
     for (const p of people) w.floorGroup(config.floors[0].id)?.add(p.group);
     // fans: the blades of "fan" lights, the icons of fan entities
     for (const l of config.lights) {
-      if (!l.fan) continue;
+      if (!l.spin) continue;
       const blades = w.lights.get(l.id)?.model.getObjectByName('fan-blades');
-      if (blades) spinner.items.push({ entity: l.fan, spin: (a) => { blades.rotation.y += a; } });
+      if (!blades) continue;
+      const spin = (a) => { blades.rotation.y += a; };
+      // spin: "light": the light's own entity (or simulated state) runs the fan
+      if (l.spin === 'light') spinner.items.push({ key: l.id, speed: () => (lightOn(l.id) ? LIGHT_FAN_SPEED : 0), spin });
+      else spinner.items.push({ entity: l.spin, spin });
     }
     for (const e of config.entities) {
       const marker = w.entities.get(e.id);
@@ -415,12 +429,13 @@ export function createLive(config) {
   function placePeople() {
     const counts = new Map();
     for (const p of people) {
-      const room = personRoom(config.rooms, states[p.person.entity]?.state);
-      p.room = room?.id ?? null;
-      p.group.visible = Boolean(room);
-      if (!room) continue;
-      const k = counts.get(room.id) || 0;
-      counts.set(room.id, k + 1);
+      const match = personRoom(config.rooms, states[p.person.entity]?.state, areas);
+      p.room = match?.id ?? null;
+      p.group.visible = Boolean(match);
+      if (!match) continue;
+      const room = largestRect(config.rooms, match.id); // a room in several parts: its biggest
+      const k = counts.get(match.id) || 0;
+      counts.set(match.id, k + 1);
       const parent = world?.floorGroup(room.storey);
       if (parent && p.group.parent !== parent) parent.add(p.group);
       p.floor = room.storey;
@@ -457,8 +472,9 @@ export function createLive(config) {
     }
   }
 
-  function sync(next) {
+  function sync(next, registryAreas = areas) {
     states = next;
+    areas = registryAreas ?? null;
     for (const u of [...doors, ...garages]) u.apply(states);
     for (const g of glows) g.goal = g.cfg.occupancy.some((e) => states[e]?.state === 'on') ? 1 : 0;
     for (const hz of heats) {
@@ -468,7 +484,7 @@ export function createLive(config) {
       if (known) heatColor(t, st.attributes?.unit_of_measurement, hz.material.color);
       hz.goal = heatOn && known ? 1 : 0;
     }
-    spinner.speeds = new Map(spinner.items.map((i) => [i.entity, fanSpeed(states[i.entity])]));
+    spinner.speeds = new Map(spinner.items.filter((i) => i.entity).map((i) => [i.entity, fanSpeed(states[i.entity])]));
     placePeople();
     screens();
     world?.wake();
@@ -489,7 +505,7 @@ export function createLive(config) {
     },
     get hasHeatmap() { return heats.length > 0; },
     get heatmap() { return heatOn; },
-    setHeatmap(on) { heatOn = Boolean(on); sync(states); },
+    setHeatmap(on) { heatOn = Boolean(on); sync(states, areas); },
     /** The reading on a room's chip ("21.5°"), or null. */
     roomReading(roomId) {
       const room = config.rooms.find((r) => r.id === roomId);
@@ -515,7 +531,10 @@ export function createLive(config) {
         glows: glows.map((g) => ({ room: g.room, on: g.goal, level: g.level })),
         heat: heats.map((hz) => ({ room: hz.room, on: hz.goal, color: `#${hz.material.color.getHexString()}` })),
         people: people.map((p) => ({ name: p.person.name, room: p.room, floor: p.floor })),
-        fans: [...spinner.speeds].map(([entity, speed]) => ({ entity, speed })),
+        fans: [
+          ...[...spinner.speeds].map(([entity, speed]) => ({ entity, speed })),
+          ...spinner.items.filter((i) => i.speed).map((i) => ({ light: i.key, speed: i.speed() })),
+        ],
         tvs: tvs.map((t) => ({ entity: t.entity, on: Boolean(t.on), picture: t.picture })),
       };
     },

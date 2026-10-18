@@ -47,12 +47,31 @@ export function applyLiveFields(raw, config, { exists = () => {} } = {}) {
     room.temperature = entityOf(what, 'temperature', r.temperature, 'sensor', exists);
   });
 
-  // Lights: a fan (type "fan" only) and a power sensor.
+  // Lights: what spins a fan's blades and whether it has a bowl (type "fan" only), a power sensor.
   config.lights.forEach((l, i) => {
     const r = raw.lights[i];
     const what = `Light "${l.id}"`;
-    l.fan = entityOf(what, 'fan', r.fan, 'fan', exists);
-    need(!l.fan || l.type === 'fan', `${what}: "fan" is only for lights of type "fan"`);
+    need(r.bowl == null || typeof r.bowl === 'boolean', `${what} has a "bowl" that is not true or false`);
+    need(r.bowl == null || l.type === 'fan', `${what}: "bowl" is only for lights of type "fan"`);
+    need(r.spin == null || l.type === 'fan', `${what}: "spin" is only for lights of type "fan"`);
+    // `spin`: a fan.* entity, or "light" (the light's own entity runs the fan); `fan` is the older name.
+    const fan = entityOf(what, 'fan', r.fan, 'fan', exists);
+    need(!fan || l.type === 'fan', `${what}: "fan" is only for lights of type "fan"`);
+    let spin = null;
+    if (r.spin === 'light') spin = 'light';
+    else if (r.spin != null) {
+      need(typeof r.spin === 'string' && ENTITY_ID.test(r.spin) && domainOf(r.spin) === 'fan',
+        `${what} needs "spin" to be "light" or a fan.* entity, not "${r.spin}"`);
+      exists(r.spin, `${what} spin`);
+      spin = r.spin;
+    }
+    need(!(spin && fan && spin !== fan), `${what} has both "spin" and "fan": keep "spin" only`);
+    l.spin = spin ?? fan;
+    l.fan = l.spin && l.spin !== 'light' ? l.spin : null;
+    if (l.type === 'fan') {
+      l.bowl = r.bowl ?? true;
+      if (!l.bowl) l.tileIcon = 'fan'; // a fan without a light kit: a fan on its tile, never a lamp or plug
+    }
     l.power = entityOf(what, 'power', r.power, 'sensor', exists);
   });
 

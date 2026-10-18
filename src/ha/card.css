@@ -15,6 +15,14 @@
   --safe-top-preview: env(safe-area-inset-top, 0px);
   --safe-bottom-preview: env(safe-area-inset-bottom, 0px);
 }
+/* full_bleed: the card goes up under the status bar and keeps its header clear of the notch
+   (safe_area's behaviour). --hc-safe-top overrides the inset, for the render test. */
+:host([full-bleed]) {
+  --safe-top-preview: var(--hc-safe-top, env(safe-area-inset-top, 0px));
+  --safe-bottom-preview: env(safe-area-inset-bottom, 0px);
+  margin-top: calc(-1 * var(--hc-safe-top, env(safe-area-inset-top, 0px)));
+  height: var(--hc-height, calc(100dvh + var(--hc-safe-top, env(safe-area-inset-top, 0px))));
+}
 
 .hc-root { position: relative; height: 100%; background: var(--bg); }
 .hc-root.ios .card { height: 100%; }
@@ -151,6 +159,62 @@
   --line: color-mix(in srgb, var(--primary-text-color, #212121) 13%, transparent);
 }
 :host([light-theme]) .hc-dialog { background: var(--card-background-color, #fff); color: var(--primary-text-color, #212121); }
+
+/* ---------- the floor-button confirmation: upstream's bottom sheet over a scrim ---------- */
+
+.hc-confirm-layer { position: absolute; inset: 0; z-index: 12; }
+.hc-confirm-scrim {
+  position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  opacity: 0; transition: opacity 280ms ease;
+}
+.hc-confirm-layer.open .hc-confirm-scrim { opacity: 1; }
+.hc-confirm-layer.closing { pointer-events: none; }
+.hc-confirm-layer.closing .hc-confirm-scrim { transition-duration: 180ms; }
+/* the sheet sits on the bottom edge instead of under the stage */
+.sheet.hc-confirm {
+  inset: auto 0 0 0;
+  gap: 18px;
+  padding-top: 20px;
+  border-radius: 26px 26px 0 0;
+  background: color-mix(in srgb, color-mix(in srgb, var(--mood) 26%, var(--bg)) 92%, transparent);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -18px 50px -20px rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
+}
+/* upstream's phone padding, plus room at the top and the phone's bottom safe area */
+.hc-root.ios .sheet.hc-confirm { padding: 20px 20px calc(var(--safe-bottom, 0px) + 16px); }
+.hc-confirm .sheet-head { gap: 12px; }
+.hc-root .hc-confirm .bubble,
+.hc-root.ios .hc-confirm .bubble {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  color: var(--text); background: var(--glass-hi); border: 1px solid var(--line);
+}
+.hc-confirm .sheet-sub { display: block; white-space: normal; line-height: 1.4; }
+.hc-confirm-actions { display: grid; gap: 10px; }
+.hc-confirm-actions button {
+  width: 100%; height: 50px; border-radius: 16px;
+  font-size: 15px; font-weight: 650;
+}
+.hc-confirm-cancel {
+  color: var(--text); background: var(--glass-hi); border: 1px solid var(--line);
+  transition: transform 260ms var(--spring), background 200ms;
+}
+.hc-confirm-cancel:active { transform: scale(0.97); }
+@media (hover: hover) { .hc-confirm-cancel:hover { background: color-mix(in srgb, var(--text) 16%, transparent); } }
+/* the blue power button's look (.round.power.on), at full width: beats upstream's phone sizes */
+.hc-root .hc-confirm-actions .hc-confirm-ok,
+.hc-root.ios .hc-confirm-actions .hc-confirm-ok { display: block; width: 100%; height: 50px; border-radius: 16px; color: #fff; }
+.hc-confirm-actions .hc-confirm-ok:active { transform: scale(0.97); }
+.hc-confirm-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:host([light-theme]) .sheet.hc-confirm {
+  background: color-mix(in srgb, var(--card-background-color, #fff) 96%, transparent);
+  border-radius: var(--ha-card-border-radius, 24px) var(--ha-card-border-radius, 24px) 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet.hc-confirm.hidden { transform: none; }
+}
 
 /* ---------- reduced motion: no fly-in, pulses or sliding; the 3D side is in world.js ---------- */
 

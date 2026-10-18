@@ -93,6 +93,7 @@ plan:
 | `plan` | the demo house | The floor plan: rooms, lights, devices and scenes. See [the plan](#the-plan). |
 | `height` | fills the view | CSS height of the card, e.g. `100%` or `800px`. |
 | `safe_area` | `false` | `true` keeps clear of the phone's notch, for a kiosk view without a header. |
+| `full_bleed` | `false` | `true` fills the screen under the phone's status bar, for a kiosk view without a header. It keeps the card's header clear of the notch too, so you don't need `safe_area` as well. |
 | `temperature_unit` | Home Assistant's | `F` or `C`. |
 | `stacked_view_default` | `false` | `true` starts a plan with several floors in the stacked view. |
 | `quality` | `medium` | `low`, `medium` or `high`: how many real lights and shadows the 3D view uses (see below). |
@@ -113,7 +114,7 @@ take. `low` also skips the bloom glow and renders at a lower resolution: use it 
 In the Home Assistant app (or a browser), open your **Profile** and pick the new dashboard under
 **Dashboard**: that's the default for this device. If you hide Home Assistant's header on that
 device (with a kiosk add-on, for example), set `safe_area: true` so the card keeps clear of the
-notch.
+notch, or `full_bleed: true` so it also fills the screen under the status bar (no need for both).
 
 ## The plan
 
@@ -127,19 +128,30 @@ The plan format is house-control's, with Home Assistant links and a new `entitie
   house-control's pieces (sofa, bed, kitchen, dining set...) plus this card's extras: `poolTable`,
   `sectional`, `glassCabinet`, `darkBookcase`, `mediaWall`, `wetBar`, `barCart`, `pokerTable`,
   `popcornMachine`, `treadmill`, `deskSetup`, `endTable`, `pedestalSink`, `tubOnly`, `tubShower`,
-  `stairs`, `catTree`, `litterRobot`, `dehumidifier`, `airPurifier`.
+  `stairs`, `catTree`, `litterRobot`, `dehumidifier`, `airPurifier`, `washerDryer`, `showerStall`,
+  `daybed`, `walkInCloset`.
 - A room gets a tab in the room filter only when a light, AC or entity is in it. Set `tab: true`
   or `tab: false` on a room to force a tab on or off; tab-less rooms still show in 3D.
+- A room of several rectangles: the extra ones say `part_of: "<room id>"`. They share the main
+  room's tab, glow and temperature, with no wall between them.
+- `area` on a room is a Home Assistant area id or name, or a list of them; people whose state
+  matches any of them stand in that room.
 - Light fixtures: `ceiling`, `pendant`, `spots`, `floor`, `table`, `strip`, plus `fan`,
   `pendantBar`, `dome`, and `cans` and `sconce`, which take a `points` list for several
-  fixtures on one switch.
+  fixtures on one switch. A `fan` takes `bowl: false` (no light kit) and `spin`: a `fan.*`, or
+  `"light"` to turn while its own switch is on.
+- `placeholder: true` on a light without a `link`: drawn unlit, "Not connected", never switched or
+  counted.
 - `lights` link to `light.*` or `switch.*` entities with `link: { service: homeassistant, id: ... }`.
   Leave `capabilities` out and they come from the entity's `supported_color_modes`.
 - `entities` holds everything else (TV, thermostat, lock...), with Home Assistant's `tap_action`,
   `hold_action` and `double_tap_action` (the older `tap: more-info | toggle | navigate` still works).
 - `scenes` set lights, or `run` a `script.*` or `scene.*`, lit up while their `active_when` matches.
+- Floor buttons `run` a script or scene, switch the floor's lights (`builtin`) or `toggle` an
+  `input_boolean.*`, and take `confirmation: true` (or `{ "text": ... }`) to ask first in the
+  card's own sheet.
 - Optional sensors make the model show what is going on: `contact` and `lock` on doors, `garage`
-  doors with a `cover`, `occupancy` and `temperature` on rooms, `people`, `fan` and `power` on lights,
+  doors with a `cover`, `occupancy` and `temperature` on rooms, `people`, `spin` and `power` on lights,
   and an `entity` on a TV. See [what the house is doing](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md#what-the-house-is-doing-new-in-this-card).
 
 ### Editing
@@ -224,13 +236,15 @@ npm run check      # lint, privacy check, unit tests, build, headless render tes
   (`hass` ↔ store), state mapping, sensitive-device and action rules, plan validation and storage,
   floors, the light pool, the live layer (sensors, people, fans, TVs), entity markers, the registry
   import and the editor host.
-- `tests/unit/`: mapping, sensitive rules, actions, validation, floors, the light pool, the registry
-  import and the live fields (`node --test`).
+- `tests/unit/`: mapping, sensitive rules, actions, validation, floors and floor buttons, rooms in
+  several parts and areas, fans and placeholder lights, the extra furniture, the light pool, the
+  registry import, the live fields and the mock `hass` (`node --test`).
 - `tests/render/`: Playwright with headless Chromium and a mock `hass` (with a mock registry):
   renders, light taps, live updates, locks open more-info, bulk actions skip sensitive devices,
   floors and the stacked view, a 50-light plan within the light budget, Home Assistant actions, the
-  card editor, the import, doors, people, the heat map, fans, TVs and the sun, and that no request
-  leaves the page.
+  card editor, the import, doors, people, the heat map, fans, TVs and the sun, the floor-button
+  confirmation sheet and helper toggles, rooms in parts, placeholders, and that no request leaves
+  the page.
 
 Releases: bump `version` in `package.json`, commit, then push a tag `vX.Y.Z` that matches it. The
 Release workflow runs every check, builds the bundle and publishes a GitHub release with

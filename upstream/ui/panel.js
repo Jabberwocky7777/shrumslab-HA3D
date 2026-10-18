@@ -53,6 +53,9 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   const floorName = () => config.floors?.find((f) => f.id === ui.floor)?.name; // ha3d
   let world = null;
   const roomName = new Map(config.rooms.map((r) => [r.id, r.name]));
+  const partOf = new Map(config.rooms.filter((r) => r.partOf).map((r) => [r.id, r.partOf])); // ha3d: rooms in several parts
+  const groupOf = (id) => partOf.get(id) ?? id; // ha3d: a part's devices are listed under its main room
+  const counted = (l) => !l.placeholder; // ha3d: placeholder lights are drawn but never counted
 
   /* ---------- skeleton ---------- */
 
@@ -112,8 +115,8 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
 
   const roomButtons = new Map();
   // ha3d: a room gets a tab only when a light, AC or plan entity is in it, unless the plan says "tab": true/false
-  const used = new Set([...config.lights, ...config.acs, ...(config.entities || [])].map((d) => d.room));
-  const tabbed = config.rooms.filter((r) => (typeof r.tab === 'boolean' ? r.tab : used.has(r.id)));
+  const used = new Set([...config.lights, ...config.acs, ...(config.entities || [])].map((d) => groupOf(d.room))); // ha3d: parts
+  const tabbed = config.rooms.filter((r) => !r.partOf && (typeof r.tab === 'boolean' ? r.tab : used.has(r.id))); // ha3d: a part has no tab
   for (const r of [{ id: 'all', name: 'All' }, ...tabbed]) {
     const count = h('span.count.zero', '0');
     const reading = h('span.reading'); // ha3d: roomNote
@@ -137,6 +140,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   }
 
   function selectRoom(id) {
+    id = groupOf(id); // ha3d
     if (ui.room === id) id = 'all';
     ui.room = id;
     layoutTiles();
@@ -146,7 +150,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   }
 
   function inScope(cfg) {
-    return onFloor(cfg) && (ui.room === 'all' || cfg.room === ui.room); // ha3d: floor
+    return onFloor(cfg) && (ui.room === 'all' || groupOf(cfg.room) === ui.room); // ha3d: floor, parts
   }
 
   function bulk(on) {
@@ -179,7 +183,7 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
       ? h('button.tile-more', { 'aria-label': `${cfg.name} settings`, onclick: (e) => { e.stopPropagation(); openSheet({ kind: 'light', id: cfg.id }); } }, icon('sliders', 15))
       : null;
     const el = h(`div.tile${dimmable ? '.dimmable' : ''}`, { role: 'button', tabindex: 0, 'aria-label': cfg.name },
-      h('div.bubble', icon(cfg.capabilities.length ? cfg.type : 'plug', 19)),
+      h('div.bubble', icon(cfg.tileIcon || (cfg.capabilities.length ? cfg.type : 'plug'), 19)), // ha3d: tileIcon
       h('div.tile-text', h('div.tile-name', cfg.name), sub),
       more,
       h('div.tile-level'));
@@ -311,7 +315,8 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     for (const room of config.rooms) {
       if (ui.floor && roomFloor.get(room.id) !== ui.floor) continue; // ha3d
       if (ui.room !== 'all' && room.id !== ui.room) continue;
-      const devices = [...tiles.values()].filter((t) => t.cfg.room === room.id);
+      if (room.partOf) continue; // ha3d: listed with its main room
+      const devices = [...tiles.values()].filter((t) => groupOf(t.cfg.room) === room.id); // ha3d: parts
       if (!devices.length) continue;
       if (ui.room === 'all') nodes.push(h('div.group-label', room.name));
       devices.filter((t) => t.kind === 'ac').forEach(add);
@@ -577,14 +582,14 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
   }
 
   function update() {
-    const lights = Object.values(state.lights);
+    const lights = config.lights.filter(counted).map((l) => state.lights[l.id]); // ha3d: placeholders
     const onCount = lights.filter((l) => l.on).length;
     const acsOn = Object.values(state.acs).filter((a) => a.on);
     const anyOn = onCount > 0 || acsOn.length > 0;
 
     // ha3d: with several floors the count is the shown floor's, and the house's comes after it.
     const multi = config.floors?.length > 1;
-    const floorLights = multi ? config.lights.filter(onFloor).map((l) => state.lights[l.id]) : lights;
+    const floorLights = multi ? config.lights.filter((l) => onFloor(l) && counted(l)).map((l) => state.lights[l.id]) : lights; // ha3d
     const floorOn = floorLights.filter((l) => l.on).length;
     homeSub.replaceChildren(
       h('span.live', { style: anyOn ? {} : { background: 'rgba(255,255,255,.25)', boxShadow: 'none' } }),
@@ -603,12 +608,12 @@ export function createPanel(root, config, store, { onFocus, onMenu, onScene = nu
     for (const [id, { b, count, reading }] of roomButtons) {
       b.classList.toggle('active', ui.room === id);
       if (reading) reading.textContent = roomNote(id) || ''; // ha3d
-      const n = config.lights.filter((l) => (id === 'all' ? onFloor(l) : l.room === id) && state.lights[l.id].on).length; // ha3d: floor
+      const n = config.lights.filter((l) => (id === 'all' ? onFloor(l) : groupOf(l.room) === id) && state.lights[l.id].on).length; // ha3d: floor, parts
       count.textContent = n;
       count.classList.toggle('zero', n === 0 || id === 'all');
     }
 
-    const scoped = config.lights.filter(inScope);
+    const scoped = config.lights.filter((l) => inScope(l) && counted(l)); // ha3d: placeholders
     const scopedOn = scoped.filter((l) => state.lights[l.id].on).length;
     const whole = config.floors?.length > 1 ? floorName() : 'Whole home'; // ha3d
     listTitle.replaceChildren(h('b', ui.room === 'all' ? whole : roomName.get(ui.room)), ` · ${scopedOn} of ${scoped.length} on`);

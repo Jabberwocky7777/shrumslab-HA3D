@@ -415,6 +415,148 @@ export const extraBuilders = {
     return g;
   },
 
+  /** Front-loading washer and dryer side by side, or one tall stacked unit ("stacked"); "lid": "top" makes top-loaders. */
+  washerDryer({ width, depth = 0.7, height = 0.95, stacked = false, color = '#f2f2f0', lid = 'front' }) {
+    const w = width ?? (stacked ? 0.7 : 1.4);
+    const body = mat(color, { rough: 0.35 });
+    const trim = mat('#2b2d33', { rough: 0.4 });
+    const chrome = mat(METAL, { metal: 0.85, rough: 0.25 });
+    const front = depth / 2;
+    const machine = (x, y0, mw, mh, dryer) => {
+      const g = group(at(box(mw - 0.02, mh, depth, body, { r: 0.03 }), x, y0, 0));
+      if (lid === 'top') {
+        g.add(at(box(mw - 0.08, 0.015, depth * 0.62, mat(darker(color, 0.92), { rough: 0.3 }), { r: 0.01 }), x, y0 + mh, 0.05));
+        g.add(at(box(mw - 0.04, 0.12, 0.06, trim, { r: 0.015 }), x, y0 + mh, -front + 0.03)); // control panel at the back
+      } else {
+        const door = at(cyl(mw * 0.3, mw * 0.3, 0.025, chrome, 32), x, y0 + mh * 0.45, front - 0.005);
+        door.rotation.x = Math.PI / 2;
+        const pane = at(cyl(mw * 0.23, mw * 0.23, 0.03, glass('#36414f', 0.75), 32), x, y0 + mh * 0.45, front - 0.003);
+        pane.rotation.x = Math.PI / 2;
+        g.add(door, pane, at(box(mw - 0.04, 0.1, 0.012, trim, { r: 0.004 }), x, y0 + mh - 0.13, front + 0.001));
+      }
+      const knob = at(cyl(0.025, 0.025, 0.02, chrome, 16), x + mw * 0.3, y0 + mh - (lid === 'top' ? -0.06 : 0.08), lid === 'top' ? -front + 0.07 : front + 0.008);
+      knob.rotation.x = Math.PI / 2;
+      g.add(knob);
+      if (dryer) g.add(at(box(mw * 0.4, 0.012, 0.01, trim, { r: 0 }), x, y0 + 0.12, front + 0.001)); // lint drawer line
+      return g;
+    };
+    if (stacked) {
+      const mh = Math.max(0.6, height - 0.1);
+      return group(machine(0, 0, w, mh, false), at(box(w - 0.04, 0.04, depth - 0.02, trim, { r: 0.01 }), 0, mh, 0), machine(0, mh + 0.04, w, mh, true));
+    }
+    return group(machine(-w / 4, 0, w / 2, height, false), machine(w / 4, 0, w / 2, height, true));
+  },
+
+  /** Shower stall: tray, two tiled walls (back and left), glass on the open sides ("glass": false is a curtain). */
+  showerStall({ width = 1.0, depth = 1.0, height = 2.0, glass: hasGlass = true, tile = '#d9dcdf', door = 'front' }) {
+    const tiles = mat(tile, { rough: 0.3 });
+    const grout = mat(darker(tile, 0.82), { rough: 0.6 });
+    const chrome = mat(METAL, { metal: 0.9, rough: 0.2 });
+    const g = group(
+      at(box(width, 0.08, depth, mat('#f4f4f2', { rough: 0.25 }), { r: 0.02 }), 0, 0, 0),
+      at(cyl(0.04, 0.04, 0.004, mat('#5b5f66', { metal: 0.6 }), 16), 0, 0.08, 0),
+      at(box(width, height, 0.04, tiles, { r: 0 }), 0, 0, -depth / 2 + 0.02),
+      at(box(0.04, height, depth, tiles, { r: 0 }), -width / 2 + 0.02, 0, 0),
+    );
+    for (let y = 0.3; y < height; y += 0.3) {
+      g.add(at(box(width - 0.04, 0.006, 0.003, grout, { r: 0 }), 0.02, y, -depth / 2 + 0.041));
+      g.add(at(box(0.003, 0.006, depth - 0.04, grout, { r: 0 }), -width / 2 + 0.041, y, 0.02));
+    }
+    // shower head on the back wall
+    const arm = at(cyl(0.012, 0.012, 0.22, chrome, 8), 0, height - 0.18, -depth / 2 + 0.04);
+    arm.rotation.x = Math.PI / 2;
+    const head = at(cyl(0.09, 0.07, 0.03, chrome, 20), 0, height - 0.22, -depth / 2 + 0.26);
+    g.add(arm, head, at(box(0.05, 0.08, 0.04, chrome, { r: 0.01 }), 0, 1.05, -depth / 2 + 0.06));
+    const top = Math.min(height, 1.95);
+    if (hasGlass) {
+      const pane = glass('#d6ebf5', 0.22);
+      const frame = mat(METAL, { metal: 0.8, rough: 0.3 });
+      g.add(at(box(width - 0.04, top - 0.08, 0.012, pane, { r: 0 }), 0.02, 0.08, depth / 2 - 0.01));
+      g.add(at(box(0.012, top - 0.08, depth - 0.04, pane, { r: 0 }), width / 2 - 0.01, 0.08, 0.02));
+      g.add(at(box(width, 0.02, 0.02, frame, { r: 0 }), 0, top, depth / 2 - 0.01), at(box(0.02, 0.02, depth, frame, { r: 0 }), width / 2 - 0.01, top, 0));
+      // the door: a seam and a handle on the front or the side panel
+      if (door === 'side') {
+        g.add(at(box(0.016, top - 0.1, 0.01, frame, { r: 0 }), width / 2 - 0.01, 0.09, 0.02));
+        g.add(at(box(0.02, 0.3, 0.02, chrome, { r: 0.008 }), width / 2 + 0.01, 0.9, depth * 0.25));
+      } else {
+        g.add(at(box(0.01, top - 0.1, 0.016, frame, { r: 0 }), 0.02, 0.09, depth / 2 - 0.01));
+        g.add(at(box(0.02, 0.3, 0.02, chrome, { r: 0.008 }), width * 0.25, 0.9, depth / 2 + 0.01));
+      }
+    } else {
+      const rail = at(cyl(0.01, 0.01, width, chrome, 8), -width / 2, top, depth / 2 - 0.03);
+      rail.rotation.z = -Math.PI / 2;
+      g.add(rail, at(box(width * 0.7, top - 0.25, 0.015, mat('#f6f3ee', { rough: 1 }), { r: 0 }), -width * 0.15, 0.2, depth / 2 - 0.03));
+    }
+    return g;
+  },
+
+  /** Twin daybed facing forward: a back along -z, an arm at each end, bedding and pillows; "trundle" adds one below. */
+  daybed({ width = 2.0, depth = 1.0, frame = '#3a3f4a', bedding = '#e8e4dc', trundle = false }) {
+    const f = mat(frame, { rough: 0.5, metal: 0.2 });
+    const b = mat(bedding, { rough: 1 });
+    const g = group(
+      at(box(width - 0.06, 0.12, depth - 0.06, f, { r: 0.015 }), 0, 0.28, 0.02),           // deck
+      at(box(width - 0.12, 0.18, depth - 0.14, b, { r: 0.05 }), 0, 0.4, 0.04),             // mattress
+      at(box(width, 0.92, 0.05, f, { r: 0.015 }), 0, 0, -depth / 2 + 0.025),               // back
+    );
+    for (const sx of [-1, 1]) g.add(at(box(0.05, 0.78, depth, f, { r: 0.015 }), sx * (width / 2 - 0.025), 0, 0));
+    for (let i = 0; i < 4; i++) g.add(at(box(0.04, 0.6, 0.03, f, { r: 0 }), -width / 2 + 0.4 + (i * (width - 0.8)) / 3, 0.3, -depth / 2 + 0.06)); // slats
+    for (const x of [-width / 4, width / 4]) {
+      const pillow = at(box(width * 0.36, 0.3, 0.12, b, { r: 0.06 }), x, 0.56, -depth / 2 + 0.14);
+      pillow.rotation.x = -0.18;
+      g.add(pillow);
+    }
+    g.add(at(box(width - 0.16, 0.02, depth * 0.45, mat(darker(bedding, 0.8), { rough: 1 }), { r: 0.01 }), 0, 0.58, depth * 0.18)); // throw
+    if (trundle) {
+      g.add(at(box(width - 0.2, 0.2, depth - 0.12, f, { r: 0.01 }), 0, 0.03, 0.12));
+      g.add(at(box(width - 0.26, 0.04, depth - 0.18, b, { r: 0.015 }), 0, 0.23, 0.12));
+    }
+    return g;
+  },
+
+  /** Walk-in closet: a top shelf and a rod of hanging clothes along the back wall; "sides" adds rods on both side walls. */
+  walkInCloset({ width = 2.0, depth = 0.6, sides = false, seed = 1 }) {
+    const rand = rng(seed * 53 + Math.round(width * 100));
+    const shelf = mat('#efe9df', { rough: 0.7 });
+    const chrome = mat(METAL, { metal: 0.85, rough: 0.25 });
+    const cols = ['#2f3b52', '#c9c4bb', '#7a2e2e', '#e8e4dc', '#3f5b46', '#1f1f22', '#a8b8cc', '#b07a4a'];
+    const g = group();
+    // A rod of `len` with clothes; place(mesh, s, isRod) puts the rod, or a garment at `s` along it.
+    // Garments are thin along the rod and hang 0.42 m wide across it.
+    const run = (len, place) => {
+      const rod = place(at(cyl(0.012, 0.012, len, chrome, 8), 0, 1.72, 0), 0, true);
+      g.add(rod);
+      for (let s = -len / 2 + 0.06; s < len / 2 - 0.04; s += 0.05 + rand() * 0.05) {
+        const long = rand() < 0.3;
+        const h = long ? 1.05 : 0.7 + rand() * 0.2;
+        g.add(place(at(box(0.025, h, 0.42, mat(cols[Math.floor(rand() * cols.length)], { rough: 1 }), { r: 0.01 }), 0, 1.7 - h, 0), s, false));
+      }
+    };
+    // back wall (-z): shelf above the rod
+    g.add(at(box(width, 0.025, 0.35, shelf, { r: 0.005 }), 0, 1.95, -depth / 2 + 0.175));
+    run(width - 0.04, (m, s, isRod) => {
+      if (isRod) { m.rotation.z = -Math.PI / 2; m.position.set(-(width - 0.04) / 2, 1.72, -depth / 2 + 0.3); return m; }
+      m.position.set(s, m.position.y, -depth / 2 + 0.3);
+      return m;
+    });
+    // side walls, in front of the back rod: within the given depth
+    const len = depth - 0.6;
+    if (sides && len > 0.2) {
+      for (const sx of [-1, 1]) {
+        const x = sx * (width / 2 - 0.3);
+        const z0 = -depth / 2 + 0.6 + len / 2;
+        g.add(at(box(0.35, 0.025, len, shelf, { r: 0.005 }), sx * (width / 2 - 0.175), 1.95, z0));
+        run(len - 0.04, (m, s, isRod) => {
+          if (isRod) { m.rotation.x = Math.PI / 2; m.position.set(x, 1.72, z0 - (len - 0.04) / 2); return m; }
+          m.rotation.y = Math.PI / 2;
+          m.position.set(x, m.position.y, z0 + s);
+          return m;
+        });
+      }
+    }
+    return g;
+  },
+
   /** Simple low table (lamp table, end table). */
   endTable({ width = 0.5, depth = 0.45, height = 0.6, color = '#2a211b' }) {
     const m = mat(color, { rough: 0.6 });
@@ -442,6 +584,10 @@ export const extraFootprints = {
   tubOnly: (i) => [i.length || 1.55, 0.78],
   stairs: (i) => [i.width || 1.0, i.length || 3.5],
   endTable: (i) => [i.width || 0.5, i.depth || 0.45],
+  washerDryer: (i) => [i.width || (i.stacked ? 0.7 : 1.4), i.depth || 0.7],
+  showerStall: (i) => [i.width || 1.0, i.depth || 1.0],
+  daybed: (i) => [i.width || 2.0, i.depth || 1.0],
+  walkInCloset: (i) => [i.width || 2.0, i.depth || 0.6],
 };
 
 /* ------------------------------ light fixtures ------------------------------ */
@@ -471,7 +617,7 @@ function pointLight(intensity, x, y, z, distance = 3.5) {
 const rel = (cfg) => (cfg.points || [cfg.pos]).map((p) => [p[0] - cfg.pos[0], p[1] - cfg.pos[1], p[2] || 0]);
 
 export const extraFixtures = {
-  /** Ceiling fan with a bowl light; the light entity drives the bowl. */
+  /** Ceiling fan with a bowl light; the light entity drives the bowl. "bowl": false is a fan without a light kit. */
   fan(cfg, H) {
     const y = cfg.y ?? H - 0.35;
     const blade = mat(cfg.blades || '#3a2c22', { rough: 0.7 });
@@ -489,6 +635,8 @@ export const extraFixtures = {
       b.rotation.y = -a;
       blades.add(b);
     }
+    // ha3d: no bowl, no glow and no light (so no pool light either): the entity only runs the fan
+    if (cfg.bowl === false) return { parts, glow: [], lights: [], hit: [1.2, 0.5, 1.2, y] };
     const bowl = at(sphere(0.15, glowMaterial(), 24), 0, y - 0.02, 0);
     bowl.scale.y = 0.55;
     return { parts, glow: [bowl], lights: [spotLight(cfg.intensity ?? 16, 0, y - 0.1, 0)], hit: [1.2, 0.5, 1.2, y] };

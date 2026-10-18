@@ -79,6 +79,26 @@ and exactly one of:
 - `"builtin": "all_on"` or `"all_off"`: switches **this floor's** plan lights. Like every bulk
   action it only ever reaches `light` and `switch` entities, never a lock, cover or other sensitive
   device.
+- `"toggle": "input_boolean.…"`: calls `input_boolean.toggle` on that helper. Only the
+  `input_boolean` domain is allowed; anything else is refused. The button shows as active while
+  the helper is `on`, as if it had `"active_when": { "entity": "input_boolean.…", "state": "on" }`;
+  give it an `active_when` of its own to change that. Its icon defaults to a switch.
+
+Any button may also have `confirmation`: `true`, or `{ "text": "Start game night?" }`. Tapping it
+then opens a sheet at the bottom of the card with the button's icon and name and the text
+(default "Run <name>?"), and **Cancel** and **Confirm** buttons. The button runs only after
+Confirm; Cancel, a tap outside the sheet or Esc closes it and nothing happens. The sheet is the
+card's own (it follows the theme, the phone's bottom safe area and reduced motion), never a browser
+or Home Assistant dialog.
+
+```json
+"actions": [
+  { "id": "off",    "name": "All off",    "icon": "moon", "builtin": "all_off", "confirmation": true },
+  { "id": "game",   "name": "Game night", "icon": "film", "run": "script.your_game_night",
+    "confirmation": { "text": "Dim the bar and start game night?" } },
+  { "id": "guests", "name": "Guests",     "icon": "bed",  "toggle": "input_boolean.your_guest_mode" }
+]
+```
 
 A floor without `actions` (or with `[]`) gets All on and All off for its own lights.
 
@@ -92,9 +112,41 @@ floor. The card option `stacked_view_default: true` starts in that view.
 
 | Section | Fields |
 | --- | --- |
-| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (the finish: `oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rooms. Where rooms touch, an inner wall appears. Optional `tab` (see below), `storey` when the plan has `floors`, and `area`: the Home Assistant area id the room stands for (set by **Import from Home Assistant…**). |
+| `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (the finish: `oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rectangles, the second with `part_of` (see below). Where rooms touch, an inner wall appears. Optional `tab` (see below), `storey` when the plan has `floors`, `part_of`, and `area`: the Home Assistant area, or a list of areas, the room stands for (see below; set by **Import from Home Assistant…**). |
 | `openings` | `type` (`door`, `window`, `open`, `garage`), `from: [x, z]`, `to: [x, z]` on one wall line (same x or same z), windows also `sill`, `head`. Optional `storey`, and `contact`, `lock`, `cover` (see [below](#what-the-house-is-doing-new-in-this-card)) |
 | `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet`, and the extra models below |
+
+### Rooms made of several rectangles
+
+An L-shaped (or any other) room is a main rectangle plus parts. A part names its main room with
+`part_of`:
+
+```json
+{ "id": "rec",      "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0], "floor": "carpet", "storey": "main" },
+{ "id": "rec_nook", "name": "Rec nook", "rect": [0, 13.2, 3.0, 1.6], "floor": "carpet", "storey": "main", "part_of": "rec" }
+```
+
+- The part gets no tab of its own. Its lights, ACs and entities are listed under the main room's tab.
+- No inner wall is drawn between a part and its main room, so it needs no `open` opening.
+- It glows with the main room's `occupancy` and takes its `temperature` tint in the heat map.
+- People whose area matches the main room (or the part's name) stand in the room's largest rectangle.
+
+`part_of` must name another room on the same floor (`storey`) that is not itself a part. An unknown
+id, a part of a part, a room on another floor and a room naming itself are refused.
+
+### Areas
+
+`area` ties a room to Home Assistant areas: one, as a string, or several, as a list. Each entry is an
+area id (`"living_room"`) or an area's name (`"Living room"`).
+
+```json
+{ "id": "kitchen", "name": "Kitchen", "rect": [6.4, 0, 4.0, 3.6], "area": ["kitchen", "Pantry"] }
+```
+
+A person (see [People](#people)) is in the room when their state equals any of the entries, in any
+case, or the room's name or id. When the card has Home Assistant's area registry, an area id also
+matches that area's name and the other way round, so either form works. **Import from Home
+Assistant** treats an area as already in the plan when any room lists it (by id or name).
 
 ### Starting from Home Assistant
 
@@ -149,6 +201,10 @@ optional; the defaults are in brackets.
 | `catTree` | `height` (1.6), `cat` (colour) |
 | `litterRobot` | A self-cleaning litter box |
 | `dehumidifier`, `airPurifier` | `width`, `depth`, `height` |
+| `washerDryer` | Front-loading washer and dryer side by side: `width` (1.4), `depth` (0.7), `height` (0.95), `stacked` (`false`; `true`: one tall stacked unit, `width` 0.7), `color` (white), `lid` (`"front"` or `"top"`) |
+| `showerStall` | Glass shower with tiled walls at the back and left: `width` (1.0), `depth` (1.0), `height` (2.0), `glass` (`true`; `false`: a curtain instead), `tile` (colour), `door` (`"front"` or `"side"`) |
+| `daybed` | Twin daybed with a back and arms, facing forward: `width` (2.0), `depth` (1.0), `frame` (colour), `bedding` (colour), `trundle` (`false`; `true`: a second bed below) |
+| `walkInCloset` | A top shelf and a rod of hanging clothes along the back wall: `width` (2.0), `depth` (0.6), `sides` (`false`; `true`: rods on both side walls too, within the `depth`: give it a deeper `depth`), `seed` |
 
 ## `lights`
 
@@ -161,12 +217,13 @@ optional; the defaults are in brackets.
 | `capabilities` | Any of `brightness`, `temp`, `color`. **Leave it out** for a linked light and the card works it out from the entity's `supported_color_modes`. `[]` means on/off only |
 | `tap_action`, `hold_action`, `double_tap_action` | Optional: Home Assistant actions instead of the usual tap to toggle and hold for the sheet (see [Actions](#actions)) |
 | `link` | `{ "service": "homeassistant", "id": "light.your_light" }`. Only `light.*` and `switch.*` entities; a `switch.*` is always on/off only |
+| `placeholder` | `true`: a fixture that is not wired up yet. Only without a `link`. It is drawn unlit; its tile says "Not connected", is greyed out and does nothing when tapped. It is left out of the light counts, All on / All off and scenes |
 
 ### Extra light types
 
 | `type` | What it is | Options |
 | --- | --- | --- |
-| `fan` | Ceiling fan with a bowl light; the light entity drives the bowl | `y`, `blades` (colour), `fan` (a `fan.*`: the blades spin with it) |
+| `fan` | Ceiling fan with a bowl light; the light entity drives the bowl | `y`, `blades` (colour), `bowl` (`true`; `false`: a fan without a light kit), `spin` (what turns the blades, see [Fans](#fans); `fan` is its older name) |
 | `pendantBar` | A bar with two dome shades, e.g. over a pool table or an island | `length` (1.3, along x), `shade` (colour), `y` (1.55) |
 | `dome` | Flush dome ceiling light | `y` |
 | `cans` | Recessed ceiling cans on one switch | `points: [[x, z], ...]` |
@@ -184,6 +241,23 @@ around `pos`.
 ```
 
 A light without a `link` is simulated: tapping it only changes the picture.
+
+#### Fans
+
+- `"spin": "fan.your_fan"` (or the older `"fan": "fan.your_fan"`): the blades turn with the fan
+  entity's `percentage` and stop while it is off.
+- `"spin": "light"`: the blades turn at a medium speed while the light's own entity (its `link`, a
+  `light.*` or `switch.*`) is on. Use it for a fan on a switch, with no `fan.*` entity.
+- `"bowl": false`: a fan without a light kit. No bowl, no glow and no light on the floor; the tile
+  shows a fan instead of a lamp or plug. Tapping it still switches its `link`.
+
+`bowl` must be `true` or `false`, and `spin` either `"light"` or a `fan.*` entity; both are only for
+type `fan`.
+
+```json
+{ "id": "office.fan", "name": "Office fan", "room": "office", "type": "fan", "pos": [11.1, 2.7],
+  "bowl": false, "spin": "light", "link": { "service": "homeassistant", "id": "switch.your_office_fan" } }
+```
 
 | In the card | Sent to Home Assistant |
 | --- | --- |
@@ -305,15 +379,16 @@ devices.
 ```
 
 The entity's state is a Home Assistant area id or name (from a Bermuda, ESPresense or template
-sensor, for example). The person shows as a coloured dot with their initial in the room whose `area`
-(or name) matches, on that room's floor. When the state matches no room they are hidden; when it is
+sensor, for example). The person shows as a coloured dot with their initial in the room one of
+whose `area` entries (or its name or id) matches, on that room's floor; see [Areas](#areas). A room
+in several parts shows them in its largest rectangle. When the state matches no room they are hidden; when it is
 `not_home` the header says they are away. `color` defaults to light blue.
 
 ### Fans, TVs and power
 
 | Where | Field | Meaning |
 | --- | --- | --- |
-| a light of type `fan` | `fan` | A `fan.*`: the blades spin with its `percentage` and stop when it is off |
+| a light of type `fan` | `spin` (or `fan`) | A `fan.*`: the blades spin with its `percentage` and stop when it is off. `"light"`: they spin while the light is on (see [Fans](#fans)) |
 | an entity | `fan` | A plan entity whose entity is a `fan.*` spins its icon; `fan` can name another fan |
 | `tv` / `mediaWall` furniture | `entity` | A `media_player.*`: the screen glows while it plays or is paused, showing its picture when Home Assistant serves one itself (its own signed address, never another site). Tapping the screen opens more-info |
 | a light | `power` | A `sensor.*` in W or kW, shown on the light's tile while it is on: "100% · 18 W" |
@@ -329,7 +404,7 @@ blends from night to a daylight look with `sun.sun`'s elevation) go with these.
 | `lights` | Light id → `on`, `brightness`, `temp`, `color`. The key `"*"` applies to every light |
 | `acs` | AC id → `on`, `target`, `mode`, `fan` |
 | `run` | **New:** a `script.*` or `scene.*` entity to start instead. Such a scene changes nothing else |
-| `active_when` | **New**, with `run` only: `{ "entity": "input_boolean.your_guest_mode", "state": "on" }`, or a list of these that must all match. The button shows as active while they do |
+| `active_when` | **New**, with `run` only (floor buttons: `run` or `toggle`): `{ "entity": "input_boolean.your_guest_mode", "state": "on" }`, or a list of these that must all match. The button shows as active while they do |
 
 A built-in scene lights up as active until something changes. One with `run` lights up only while its
 `active_when` matches, because only Home Assistant knows what the script did; without `active_when` it
@@ -339,7 +414,9 @@ never does. Floor buttons with `run` take `active_when` the same way.
 
 The card refuses a plan that doesn't add up and says why: unknown rooms, duplicate ids, openings that
 aren't axis-aligned, malformed entity ids, a sensitive entity with `toggle`, a `run` that isn't a
-script or scene, a room on an unknown floor, a floor button with both or neither of `run` and
-`builtin`, an action that would reach a sensitive device, a sensor of the wrong domain (a `contact`
+script or scene, a room on an unknown floor, a floor button without exactly one of `run`, `builtin`
+and `toggle`, a `toggle` that is not an `input_boolean.*`, a `confirmation` that is not `true` or
+`{ "text": ... }`, a `part_of` that names an unknown room, a part or a room on another floor, a
+`placeholder` with a `link`, a `bowl` or `spin` on a light that is not a fan, an action that would reach a sensitive device, a sensor of the wrong domain (a `contact`
 that is not a `binary_sensor.*`, a garage door without its `cover`...). A linked entity that doesn't exist (yet) in Home Assistant is only a warning: its
 tile says "Not found".

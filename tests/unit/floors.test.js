@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validatePlan } from '../../src/ha/validate.js';
-import { floorView, defaultFloor, IMPLICIT_FLOOR, DEFAULT_ACTIONS } from '../../src/ha/floors.js';
+import { floorView, defaultFloor, IMPLICIT_FLOOR, DEFAULT_ACTIONS, confirmationText } from '../../src/ha/floors.js';
 
 const demo = JSON.parse(readFileSync(new URL('../../plans/demo.json', import.meta.url)));
 // The demo as a plan from before floors: its main floor only, no "floors", no "storey".
@@ -44,7 +44,7 @@ const twoFloors = (patch = {}) => ({
 test('the demo has a main floor and a basement', () => {
   const { config } = validatePlan(demo);
   assert.deepEqual(config.floors.map((f) => f.id), ['basement', 'main']);
-  assert.equal(config.furniture.filter((f) => f.storey === 'basement').length, 6);
+  assert.equal(config.furniture.filter((f) => f.storey === 'basement').length, 8);
 });
 
 test('a plan without floors has one implicit floor and is unchanged otherwise', () => {
@@ -135,8 +135,8 @@ test('floor actions: exactly one of run or builtin, a known builtin, unique ids,
     p.floors[0].actions = actions;
     return p;
   };
-  assert.throws(() => validatePlan(withActions([{ id: 'a' }])), /not neither/);
-  assert.throws(() => validatePlan(withActions([{ id: 'a', run: 'script.demo_x', builtin: 'all_on' }])), /not both/);
+  assert.throws(() => validatePlan(withActions([{ id: 'a' }])), /exactly one of "run".*not none/);
+  assert.throws(() => validatePlan(withActions([{ id: 'a', run: 'script.demo_x', builtin: 'all_on' }])), /not several/);
   assert.throws(() => validatePlan(withActions([{ id: 'a', builtin: 'everything_off' }])), /unknown "builtin"/);
   assert.throws(() => validatePlan(withActions([{ id: 'a', builtin: 'all_on' }, { id: 'a', builtin: 'all_off' }])), /two actions with id "a"/);
   assert.throws(() => validatePlan(withActions([{ id: 'a', builtin: 'all_on', icon: 'nope' }])), /unknown icon/);
@@ -146,4 +146,57 @@ test('floor actions: exactly one of run or builtin, a known builtin, unique ids,
 test('a floor action script missing from Home Assistant is only a warning', () => {
   const { warnings } = validatePlan(twoFloors(), { states: {} });
   assert.ok(warnings.some((w) => /script\.demo_main_lights_main/.test(w)));
+});
+
+const mainActions = (list) => {
+  const p = twoFloors();
+  p.floors[0].actions = list;
+  return validatePlan(p).config.floors.find((f) => f.id === 'main').actions;
+};
+
+test('floor actions: "toggle" switches an input_boolean and is active while it is on', () => {
+  const [guests] = mainActions([{ id: 'g', name: 'Guests', toggle: 'input_boolean.demo_guests' }]);
+  assert.equal(guests.toggle, 'input_boolean.demo_guests');
+  assert.deepEqual([guests.run, guests.builtin], [null, null]);
+  assert.deepEqual(guests.activeWhen, [{ entity: 'input_boolean.demo_guests', state: 'on' }]);
+  assert.equal(guests.icon, 'switch');
+  // active_when may say otherwise
+  const [own] = mainActions([{ id: 'g', toggle: 'input_boolean.demo_guests', active_when: { entity: 'input_boolean.demo_guests', state: 'off' } }]);
+  assert.deepEqual(own.activeWhen, [{ entity: 'input_boolean.demo_guests', state: 'off' }]);
+  // only input_boolean helpers, and only one kind of action
+  for (const toggle of ['switch.demo_x', 'light.demo_x', 'lock.demo_front_door', 'cover.demo_garage_door', 'script.demo_x', 'input_boolean', 'Input_Boolean.X']) {
+    assert.throws(() => mainActions([{ id: 'a', toggle }]), /"toggle" may only be an input_boolean\.\* helper/, toggle);
+  }
+  assert.throws(() => mainActions([{ id: 'a', toggle: 'input_boolean.demo_x', run: 'script.demo_x' }]), /not several/);
+  assert.throws(() => mainActions([{ id: 'a', toggle: 'input_boolean.demo_x', builtin: 'all_on' }]), /not several/);
+  assert.throws(() => mainActions([{ id: 'a', toggle: '' }]), /no helper to toggle yet/);
+  // a helper missing from Home Assistant is a warning, like a script
+  const p = twoFloors();
+  p.floors[0].actions = [{ id: 'a', toggle: 'input_boolean.demo_x' }];
+  assert.ok(validatePlan(p, { states: {} }).warnings.some((w) => /input_boolean\.demo_x/.test(w)));
+});
+
+test('floor actions: "confirmation" is true or { text } on run, builtin and toggle', () => {
+  const [run, builtin, toggle, plain] = mainActions([
+    { id: 'r', name: 'Movie', run: 'script.demo_x', confirmation: true },
+    { id: 'b', name: 'All off', builtin: 'all_off', confirmation: { text: 'Switch the floor off?' } },
+    { id: 't', name: 'Guests', toggle: 'input_boolean.demo_x', confirmation: { text: '  Guests are here?  ' } },
+    { id: 'p', name: 'Plain', run: 'script.demo_x' },
+  ]);
+  assert.deepEqual(run.confirmation, { text: null });
+  assert.equal(confirmationText(run), 'Run Movie?');
+  assert.equal(confirmationText(builtin), 'Switch the floor off?');
+  assert.equal(confirmationText(toggle), 'Guests are here?');
+  assert.equal(plain.confirmation, null);
+  assert.equal(mainActions([{ id: 'f', run: 'script.demo_x', confirmation: false }])[0].confirmation, null);
+  for (const confirmation of ['yes', 1, [], { text: '' }, { text: 4 }]) {
+    assert.throws(() => mainActions([{ id: 'c', run: 'script.demo_x', confirmation }]), /"confirmation"/, JSON.stringify(confirmation));
+  }
+});
+
+test('the demo basement has a confirmed script button and a helper toggle', () => {
+  const basement = validatePlan(demo).config.floors.find((f) => f.id === 'basement');
+  assert.equal(confirmationText(basement.actions.find((a) => a.id === 'game')), 'Dim the bar and start game night?');
+  const guests = basement.actions.find((a) => a.id === 'guests');
+  assert.deepEqual([guests.toggle, guests.confirmation], ['input_boolean.demo_guest_mode', { text: null }]);
 });

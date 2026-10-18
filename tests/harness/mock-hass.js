@@ -22,6 +22,7 @@ export function demoStates() {
     light('light.demo_bath_mirror', 'Bath mirror', ['color_temp']),
     light('light.demo_office_ceiling', 'Office ceiling', ['brightness']),
     plain('switch.demo_desk_lamp', 'Desk lamp', 'on'),
+    plain('switch.demo_office_fan', 'Office fan', 'off'),
     light('light.demo_hall_ceiling', 'Hall ceiling', ['color_temp']),
     light('light.demo_rec_cans', 'Rec room cans', ['brightness']),
     light('light.demo_rec_pool_table', 'Pool table light', ['color_temp']),
@@ -47,10 +48,12 @@ export function demoStates() {
     plain('script.demo_main_lights_on', 'Main floor lights on', 'off'),
     plain('scene.demo_movie', 'Movie', 'unknown'),
     plain('input_boolean.demo_night_mode', 'Night mode', 'off'),
+    plain('input_boolean.demo_guest_mode', 'Guest mode', 'off'),
     plain('binary_sensor.demo_front_door', 'Front door', 'off', { device_class: 'door' }),
     plain('binary_sensor.demo_living_window', 'Living window', 'off', { device_class: 'window' }),
     plain('binary_sensor.demo_living_motion', 'Living motion', 'on', { device_class: 'motion' }),
     plain('binary_sensor.demo_kitchen_motion', 'Kitchen motion', 'off', { device_class: 'motion' }),
+    plain('binary_sensor.demo_rec_motion', 'Rec room motion', 'off', { device_class: 'motion' }),
     plain('sensor.demo_living_temperature', 'Living temperature', '21.5', { unit_of_measurement: '°C', device_class: 'temperature' }),
     plain('sensor.demo_bedroom_temperature', 'Bedroom temperature', '18.2', { unit_of_measurement: '°C', device_class: 'temperature' }),
     plain('sensor.demo_kitchen_temperature', 'Kitchen temperature', '24.6', { unit_of_measurement: '°C', device_class: 'temperature' }),
@@ -124,12 +127,32 @@ function registryAnswer(type) {
   return undefined;
 }
 
+// Climate attributes that hold a temperature, and how each is rounded once in °F: set-points to
+// whole degrees (the range outwards), readings to a tenth.
+const CLIMATE_TEMPS = {
+  temperature: Math.round, target_temp_low: Math.round, target_temp_high: Math.round,
+  min_temp: Math.floor, max_temp: Math.ceil, current_temperature: (f) => Math.round(f * 10) / 10,
+};
+
+/**
+ * Every climate.* state in °F, the way Home Assistant reports them with a Fahrenheit unit system.
+ * An entity whose temperatures are all 50 or below is taken to be in °C and converted; anything
+ * else (already °F, or no climate entities at all) is left as it is.
+ */
+export function toFahrenheit(states) {
+  for (const [id, st] of Object.entries(states || {})) {
+    const a = st?.attributes;
+    if (!id.startsWith('climate.') || !a) continue;
+    const keys = Object.keys(CLIMATE_TEMPS).filter((k) => Number.isFinite(a[k]));
+    if (!keys.length || keys.some((k) => a[k] > 50)) continue;
+    for (const k of keys) a[k] = CLIMATE_TEMPS[k]((a[k] * 9) / 5 + 32);
+  }
+  return states;
+}
+
 // registry: true (hass.floors / areas / devices / entities), 'ws' (only the websocket commands) or false
 export function createMockHass({ admin = true, states = demoStates(), dashboard = null, fahrenheit = false, registry = true } = {}) {
-  if (fahrenheit) {
-    Object.assign(states['climate.demo_bedroom_ac'].attributes, { temperature: 73, current_temperature: 77.9, min_temp: 60, max_temp: 86 });
-    Object.assign(states['climate.demo_thermostat'].attributes, { temperature: 72, current_temperature: 70.5 });
-  }
+  if (fahrenheit) toFahrenheit(states);
   const calls = [];
   const ws = [];
   const hass = {

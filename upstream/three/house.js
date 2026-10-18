@@ -11,7 +11,7 @@ const key = (v) => Math.round(v * 1000);
 
 // Splits every room edge into wall segments, classifying each as exterior / interior
 // and attaching the opening (door, window, ...) that covers it, if any.
-function wallSegments(config) {
+export function wallSegments(config) { // ha3d: exported for the unit tests
   const lines = new Map();
   const line = (axis, c) => {
     const k = `${axis}:${key(c)}`;
@@ -20,10 +20,11 @@ function wallSegments(config) {
   };
 
   for (const r of config.rooms) {
-    line('x', r.z).edges.push({ a: r.x, b: r.x + r.w, inside: 1 });
-    line('x', r.z + r.d).edges.push({ a: r.x, b: r.x + r.w, inside: -1 });
-    line('z', r.x).edges.push({ a: r.z, b: r.z + r.d, inside: 1 });
-    line('z', r.x + r.w).edges.push({ a: r.z, b: r.z + r.d, inside: -1 });
+    const room = r.partOf || r.id; // ha3d: a part of a room and its main room share no wall
+    line('x', r.z).edges.push({ a: r.x, b: r.x + r.w, inside: 1, room });
+    line('x', r.z + r.d).edges.push({ a: r.x, b: r.x + r.w, inside: -1, room });
+    line('z', r.x).edges.push({ a: r.z, b: r.z + r.d, inside: 1, room });
+    line('z', r.x + r.w).edges.push({ a: r.z, b: r.z + r.d, inside: -1, room });
   }
   for (const o of config.openings) {
     const alongX = o.from[1] === o.to[1];
@@ -45,7 +46,8 @@ function wallSegments(config) {
       if (!covering.length) continue;
       const seg = {
         axis: l.axis, c: l.c, a: pts[i], b: pts[i + 1],
-        kind: covering.length > 1 ? 'interior' : 'exterior',
+        // ha3d: 'joined' between the rectangles of one room (part_of): no wall at all
+        kind: covering.length > 1 ? (covering.every((e) => e.room === covering[0].room) ? 'joined' : 'interior') : 'exterior',
         inside: covering[0].inside,
         opening: l.openings.find((o) => o.a < mid && mid < o.b) || null,
       };
@@ -107,6 +109,7 @@ export function buildHouse(config, camDir) {
   };
 
   for (const s of wallSegments(config)) {
+    if (s.kind === 'joined') continue; // ha3d
     const exterior = s.kind === 'exterior';
     const t = exterior ? EXT_T : INT_T;
     // Outward normal of an exterior wall points away from its room.

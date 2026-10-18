@@ -22,6 +22,7 @@
       if (params.get('quality')) config.quality = params.get('quality');
       if (!many) config.power = 'sensor.demo_house_power';
       if (params.get('sun')) config.sun = true; // ?sun=1
+      if (params.get('full_bleed')) config.full_bleed = true; // ?full_bleed=1
       const hass = createMockHass({
         states: many ? { ...demoStates(), ...manyLightsStates(20) } : demoStates(),
         registry: params.get('registry') === 'ws' ? 'ws' : true, // ?registry=ws: only the websocket commands

@@ -8,6 +8,7 @@ import { normalizeActiveWhen } from './conditions.js';
 import { applyLiveFields } from './live-fields.js';
 import { defaultIcon } from './mapping.js';
 import { applyFloors } from './floors.js';
+import { applyRoomFields } from './rooms.js';
 
 export { ConfigError };
 
@@ -67,11 +68,6 @@ function gestureActions(what, item, entity) {
 export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
   const config = normalize(structuredClone(raw));
   raw.rooms.forEach((r) => need(r.tab == null || typeof r.tab === 'boolean', `Room "${r.id}" has a "tab" that is not true or false`));
-  // ha3d: the Home Assistant area a room stands for (set by "Import from Home Assistant…")
-  raw.rooms.forEach((r, i) => {
-    need(r.area == null || (typeof r.area === 'string' && r.area), `Room "${r.id}" has an "area" that is not an area id`);
-    config.rooms[i].area = r.area ?? null;
-  });
   // Temperatures in the plan (AC ranges, scene targets, outdoorTemp) are in Home Assistant's unit.
   config.tempUnit = unit === '°F' ? '°F' : '°C';
   if (config.tempUnit === '°F' && raw.outdoorTemp == null) config.outdoorTemp = 80;
@@ -82,6 +78,7 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
     if (states && !states[entity]) warnings.push(`${what}: "${entity}" was not found in Home Assistant`);
   };
   applyFloors(raw, config, { exists }); // floors, and the storey of every room, opening and furniture item
+  applyRoomFields(raw, config); // `area` (one or several) and `part_of`
 
   config.lights.forEach((l, i) => {
     const rawLight = raw.lights[i];
@@ -92,6 +89,10 @@ export function validatePlan(raw, { states = null, unit = '°C' } = {}) {
         `Light "${l.id}" point #${k + 1} must be [x, z] or [x, z, rotation]`));
     }
     l.autoCapabilities = !('capabilities' in rawLight); // ha3d: worked out from supported_color_modes
+    // A fixture that is not wired up yet: drawn, never switched, never counted.
+    need(rawLight.placeholder == null || typeof rawLight.placeholder === 'boolean', `Light "${l.id}" has a "placeholder" that is not true or false`);
+    need(!(rawLight.placeholder && (l.link || l.tuya)), `Light "${l.id}" is a "placeholder" and linked at the same time: remove one of them`);
+    l.placeholder = Boolean(rawLight.placeholder);
     Object.assign(l, gestureActions(`Light "${l.id}"`, rawLight, haLink(l))); // optional overrides of tap / hold
     if (!l.link && !l.tuya) return;
     const entity = haLink(l);

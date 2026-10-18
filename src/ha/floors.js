@@ -8,12 +8,14 @@ import { normalizeActiveWhen } from './conditions.js';
 
 export const IMPLICIT_FLOOR = '_home';
 export const BUILTIN_ACTIONS = ['all_on', 'all_off'];
+/** What a floor button's `toggle` may switch: Home Assistant helpers only. */
+export const TOGGLE_DOMAINS = new Set(['input_boolean']);
 const ENTITY_ID = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 
 /** What a floor with no `actions` offers: All on and All off for its own lights. */
 export const DEFAULT_ACTIONS = [
-  { id: 'all_on', name: 'All on', icon: 'sun', builtin: 'all_on', run: null },
-  { id: 'all_off', name: 'All off', icon: 'moon', builtin: 'all_off', run: null },
+  { id: 'all_on', name: 'All on', icon: 'sun', builtin: 'all_on', run: null, toggle: null, confirmation: null },
+  { id: 'all_off', name: 'All off', icon: 'moon', builtin: 'all_off', run: null, toggle: null, confirmation: null },
 ];
 
 function need(cond, msg) {
@@ -26,25 +28,49 @@ function normalizeAction(a, i, floor, exists) {
   need(typeof a.id === 'string' && a.id, `Floor "${floor}" action #${i + 1} is missing an "id"`);
   need(a.icon == null || (typeof a.icon === 'string' && hasIcon(a.icon)), `${what} has unknown icon "${a.icon}"`);
   need(a.run !== '', `${what} has no script or scene to run yet`);
+  need(a.toggle !== '', `${what} has no helper to toggle yet`);
   const hasRun = a.run != null;
   const hasBuiltin = a.builtin != null && a.builtin !== '';
-  need(hasRun !== hasBuiltin, `${what} needs either "run" (a script or scene) or "builtin" (${BUILTIN_ACTIONS.join(' or ')}), not ${hasRun ? 'both' : 'neither'}`);
+  const hasToggle = a.toggle != null;
+  const kinds = [hasRun, hasBuiltin, hasToggle].filter(Boolean).length;
+  need(kinds === 1, `${what} needs exactly one of "run" (a script or scene), "builtin" (${BUILTIN_ACTIONS.join(' or ')}) or "toggle" (an input_boolean), not ${kinds ? 'several' : 'none'}`);
   if (hasRun) {
     need(typeof a.run === 'string' && ENTITY_ID.test(a.run) && RUN_DOMAINS.has(domainOf(a.run)),
       `${what}: "run" may only be a script.* or scene.* entity, not "${a.run}"`);
     exists(a.run, what);
+  } else if (hasToggle) {
+    need(typeof a.toggle === 'string' && ENTITY_ID.test(a.toggle) && TOGGLE_DOMAINS.has(domainOf(a.toggle)),
+      `${what}: "toggle" may only be an input_boolean.* helper, not "${a.toggle}"`);
+    exists(a.toggle, what);
   } else {
     need(BUILTIN_ACTIONS.includes(a.builtin), `${what} has unknown "builtin" "${a.builtin}" (use ${BUILTIN_ACTIONS.join(' or ')})`);
   }
+  // A helper's button is active while it is on, unless active_when says otherwise.
+  const activeWhen = normalizeActiveWhen(what, a.active_when, { hasRun: hasRun || hasToggle, exists })
+    ?? (hasToggle ? [{ entity: a.toggle, state: 'on' }] : null);
   return {
     ...a,
     name: a.name || a.id,
-    icon: a.icon || (a.builtin === 'all_off' ? 'moon' : 'sun'),
+    icon: a.icon || (hasToggle ? 'switch' : a.builtin === 'all_off' ? 'moon' : 'sun'),
     run: hasRun ? a.run : null,
-    builtin: hasRun ? null : a.builtin,
-    activeWhen: normalizeActiveWhen(what, a.active_when, { hasRun, exists }),
+    builtin: hasBuiltin ? a.builtin : null,
+    toggle: hasToggle ? a.toggle : null,
+    confirmation: normalizeConfirmation(what, a.confirmation),
+    activeWhen,
   };
 }
+
+/** `confirmation`: true or { "text": "..." }. Returns { text } (null: the default text) or null. */
+export function normalizeConfirmation(what, value) {
+  if (value == null || value === false) return null;
+  if (value === true) return { text: null };
+  need(typeof value === 'object' && !Array.isArray(value), `${what}: "confirmation" must be true or { "text": "..." }`);
+  need(value.text == null || (typeof value.text === 'string' && value.text.trim()), `${what}: "confirmation" needs "text" to be some text`);
+  return { text: value.text?.trim() || null };
+}
+
+/** What the confirmation sheet asks: the plan's text, else "Run <name>?". */
+export const confirmationText = (action) => action.confirmation?.text || `Run ${action.name}?`;
 
 /** The floors whose rooms have a wall on the line of `opening` covering its midpoint. */
 function floorsOfOpening(o, rooms) {

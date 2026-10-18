@@ -99,7 +99,7 @@ test('scenes and floor buttons in the demo carry active_when', () => {
 });
 
 test('card options are checked', () => {
-  assert.doesNotThrow(() => checkOptions({ quality: 'low', safe_area: true, temperature_unit: 'F', sun: false, power: 'sensor.demo_house_power', stacked_view_default: true }));
+  assert.doesNotThrow(() => checkOptions({ quality: 'low', safe_area: true, full_bleed: true, temperature_unit: 'F', sun: false, power: 'sensor.demo_house_power', stacked_view_default: true }));
   assert.throws(() => checkOptions({ quality: 'ultra' }), /"quality"/);
   assert.throws(() => checkOptions({ sun: 'yes' }), /"sun" must be true or false/);
   assert.throws(() => checkOptions({ power: 'switch.demo_x' }), /sensor\.\*/);
@@ -107,8 +107,8 @@ test('card options are checked', () => {
 });
 
 test('the card editor summarises the plan and never edits it as a form', () => {
-  assert.equal(planSummary(demo), '2 floors · 12 rooms · 23 lights · 7 devices');
+  assert.equal(planSummary(demo), '2 floors · 12 rooms · 24 lights · 7 devices');
   assert.equal(planSummary({ rooms: [{}], lights: [] }), '1 room · 0 lights · 0 devices');
   assert.ok(!OPTION_NAMES.includes('plan'));
-  assert.deepEqual(OPTION_NAMES.sort(), ['height', 'power', 'quality', 'safe_area', 'stacked_view_default', 'sun', 'temperature_unit']);
+  assert.deepEqual(OPTION_NAMES.sort(), ['full_bleed', 'height', 'power', 'quality', 'safe_area', 'stacked_view_default', 'sun', 'temperature_unit']);
 });

@@ -9,7 +9,8 @@ const room = demo.rooms[0].id;
 
 test('the demo plan is valid', () => {
   const { config, warnings } = validatePlan(demo);
-  assert.equal(config.rooms.length, 12);
+  assert.equal(config.rooms.length, 13); // 12 rooms, one of them in two parts
+  assert.equal(config.rooms.filter((r) => r.partOf).length, 1);
   assert.equal(config.entities.length, 7);
   assert.deepEqual(warnings, []);
 });

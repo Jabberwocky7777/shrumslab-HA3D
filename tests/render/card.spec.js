@@ -318,8 +318,8 @@ test('the floor switcher changes the tiles, room tabs, buttons and header count'
   expect(names).toHaveLength(4);
   const tabs = await page.locator('house-control-card .rooms .room:not([hidden]):not(.heat-toggle)').evaluateAll((els) => els.map((e) => e.firstChild.textContent.trim()));
   expect(tabs).toEqual(['All', 'Bar', 'Gym', 'Utility']);
-  // no "actions" on the basement: its own All on / All off
-  await expect(page.locator('house-control-card .scene.floor-action')).toHaveText(['All on', 'All off']);
+  // the basement's own buttons
+  await expect(page.locator('house-control-card .scene.floor-action')).toHaveText(['All on', 'All off', 'Game night', 'Guests']);
   await expect(page.locator('house-control-card .list-head .title')).toContainText('Basement');
   expect(await page.evaluate(() => window.__test.card._ui.debug.world.floor)).toBe('basement');
 
@@ -525,12 +525,12 @@ async function makeEditor(page, { haForm = false, admin = true } = {}) {
 
 test('the card editor: ha-form for the options, a summary of the plan, never the plan as a form', async ({ page }) => {
   await open(page);
-  expect(await makeEditor(page, { haForm: true })).toBe('2 floors · 12 rooms · 23 lights · 7 devices');
+  expect(await makeEditor(page, { haForm: true })).toBe('2 floors · 12 rooms · 24 lights · 7 devices');
   const form = await page.evaluate(() => {
     const f = window.__test.editor.shadowRoot.querySelector('ha-form');
     return { schema: f.schema.map((s) => s.name), data: f.data, hasHass: Boolean(f.hass) };
   });
-  expect(form.schema).toEqual(['height', 'quality', 'temperature_unit', 'safe_area', 'stacked_view_default', 'sun', 'power']);
+  expect(form.schema).toEqual(['height', 'quality', 'temperature_unit', 'safe_area', 'full_bleed', 'stacked_view_default', 'sun', 'power']);
   expect(form.data).toEqual({ height: '100vh', power: 'sensor.demo_house_power' });
   expect(form.hasHass).toBe(true);
   // a change from ha-form comes back as config-changed, with the plan untouched
@@ -580,6 +580,19 @@ test('a light Home Assistant theme gives the panel the theme\'s card colour', as
   await expect(page.locator('house-control-card')).toHaveAttribute('light-theme', '');
   expect(await bg()).not.toBe('rgba(0, 0, 0, 0)');
   expect(await page.evaluate(() => getComputedStyle(window.__test.card.shadowRoot.querySelector('.tile-name')).color)).toBe('rgb(33, 33, 33)');
+});
+
+test('full_bleed pulls the card up under the status bar and keeps its header clear of the notch', async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await open(page, '?full_bleed=1');
+  const card = page.locator('house-control-card');
+  await expect(card).toHaveAttribute('full-bleed', '');
+  // desktop Chromium has no notch: stand in for env(safe-area-inset-top) with the override
+  await page.evaluate(() => window.__test.card.style.setProperty('--hc-safe-top', '59px'));
+  const top = await card.evaluate((el) => el.getBoundingClientRect().top);
+  expect(top).toBeLessThan(0);
+  expect(top).toBe(-59);
+  expect(await card.evaluate((el) => getComputedStyle(el).getPropertyValue('--safe-top-preview').trim())).toBe('59px');
 });
 
 test('with reduced motion the camera jumps instead of gliding', async ({ page }) => {
@@ -639,7 +652,7 @@ for (const registry of ['hass', 'ws']) {
     expect(plan.rooms.some((r) => r.area === 'demo_porch')).toBe(false);
     expect(plan.entities.find((e) => e.entity === 'climate.demo_den_heater')).toBeTruthy();
     expect(plan.entities.some((e) => e.entity === 'lock.demo_porch_lock')).toBe(false);
-    expect(plan.lights.filter((l) => l.link.id === 'light.demo_living_ceiling')).toHaveLength(1);
+    expect(plan.lights.filter((l) => l.link?.id === 'light.demo_living_ceiling')).toHaveLength(1);
     if (registry === 'ws') {
       expect(await page.evaluate(() => window.__test.hass.ws.map((m) => m.type).filter((t) => t.includes('registry')).sort())).toEqual([
         'config/area_registry/list', 'config/device_registry/list', 'config/entity_registry/list_for_display', 'config/floor_registry/list',
@@ -833,4 +846,202 @@ test('power: watts on a light that is on, the house total in the header', async 
   await expect(spots).toHaveText('100% · 18 W');
   await setLive(page, 'sensor.demo_house_power', '640');
   await expect(page.locator('house-control-card .home-sub .house-power')).toHaveText(' · 640 W');
+});
+
+/* ---------- floor-button confirmation, helper toggles ---------- */
+
+// window.confirm / alert must never be used: any call is recorded and refused.
+const trapDialogs = (page) => page.addInitScript(() => {
+  window.__dialogs = [];
+  window.confirm = (t) => { window.__dialogs.push(['confirm', t]); return false; };
+  window.alert = (t) => { window.__dialogs.push(['alert', t]); };
+});
+const confirmSheet = (page) => page.locator('house-control-card .hc-confirm');
+const confirmLayer = (page) => page.locator('house-control-card .hc-confirm-layer');
+const toBasement = (page) => page.locator('house-control-card .floors .floor-chip', { hasText: 'Basement' }).click();
+
+test('a floor button with confirmation asks in the card\'s own sheet: Cancel runs nothing, Confirm runs it once', async ({ page }, info) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await trapDialogs(page);
+  const urls = recordRequests(page);
+  const browserDialogs = [];
+  page.on('dialog', (d) => { browserDialogs.push(d.message()); d.dismiss(); });
+  const errors = await open(page);
+  await toBasement(page);
+  await resetCalls(page);
+  const game = page.locator('house-control-card .scene.floor-action', { hasText: 'Game night' });
+
+  await game.click();
+  const sheet = confirmSheet(page);
+  await expect(sheet).toBeVisible();
+  await expect(sheet).not.toHaveClass(/hidden/);
+  await expect(sheet.locator('.sheet-name')).toHaveText('Game night');
+  await expect(sheet.locator('.sheet-sub')).toHaveText('Dim the bar and start game night?');
+  await expect(sheet.locator('.sheet-head .bubble svg')).toHaveCount(1);
+  await expect(sheet.locator('.hc-confirm-actions button')).toHaveText(['Cancel', 'Confirm']);
+  // the card's own sheet slides up to the bottom of the card, with full-width buttons
+  await expect.poll(async () => { const b = await sheet.boundingBox(); return Math.round(b.y + b.height); }).toBe(932);
+  const box = await sheet.boundingBox();
+  expect(Math.round(box.x)).toBe(0);
+  expect(Math.round(box.width)).toBe(430);
+  for (const t of ['Cancel', 'Confirm']) expect((await sheet.locator('button', { hasText: t }).boundingBox()).width).toBeGreaterThan(380);
+  expect(await sheet.locator('.hc-confirm-ok').evaluate((el) => getComputedStyle(el).backgroundImage)).toContain('linear-gradient'); // the power button's blue
+  await page.screenshot({ path: info.outputPath('confirm-sheet.png') });
+
+  await sheet.locator('button', { hasText: 'Cancel' }).click();
+  await expect(confirmLayer(page)).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(await calls(page)).toEqual([]);
+
+  // the scrim and Esc close it too, without running anything
+  await game.click();
+  await expect(confirmSheet(page)).toBeVisible();
+  await page.locator('house-control-card .hc-confirm-scrim').click({ position: { x: 20, y: 20 } });
+  await expect(confirmLayer(page)).toHaveCount(0);
+  await game.click();
+  await expect(confirmSheet(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(confirmLayer(page)).toHaveCount(0);
+  expect(await calls(page)).toEqual([]);
+
+  await game.click();
+  await confirmSheet(page).locator('button', { hasText: 'Confirm' }).click();
+  await expect(confirmLayer(page)).toHaveCount(0);
+  await expect.poll(() => calls(page)).toEqual([{ domain: 'script', service: 'turn_on', data: { entity_id: 'script.demo_movie_mode' } }]);
+  await page.waitForTimeout(400);
+  expect(await calls(page)).toHaveLength(1);
+  expect(await page.evaluate(() => window.__dialogs)).toEqual([]);
+  expect(browserDialogs).toEqual([]);
+  expect(await page.evaluate(() => window.__test.events.filter((e) => e.type === 'hass-action'))).toEqual([]);
+  expect(errors).toEqual([]);
+  expectSameOrigin(urls, page.url());
+});
+
+test('the confirmation sheet keeps clear of the bottom safe area and follows reduced motion', async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page);
+  await page.evaluate(() => window.__test.card.style.setProperty('--safe-bottom-preview', '34px'));
+  await toBasement(page);
+  await page.locator('house-control-card .scene.floor-action', { hasText: 'Game night' }).click();
+  const sheet = confirmSheet(page);
+  await expect(sheet).toBeVisible();
+  expect(await sheet.evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBe(34 + 16);
+  const confirm = await sheet.locator('.hc-confirm-ok').boundingBox();
+  expect(confirm.y + confirm.height).toBeLessThanOrEqual(932 - 34);
+  // no slide: the sheet is in place at once
+  expect(await sheet.evaluate((el) => getComputedStyle(el).transitionDuration.split(',').every((d) => parseFloat(d) <= 0.001))).toBe(true);
+  await sheet.locator('button', { hasText: 'Cancel' }).click();
+  await expect(confirmLayer(page)).toHaveCount(0);
+});
+
+test('a floor button with toggle switches its input_boolean and shows as active while it is on', async ({ page }) => {
+  await open(page);
+  await toBasement(page);
+  await resetCalls(page);
+  const guests = page.locator('house-control-card .scene.floor-action', { hasText: 'Guests' });
+  await expect(guests).not.toHaveClass(/active/);
+  await guests.click();
+  await expect(confirmSheet(page).locator('.sheet-sub')).toHaveText('Run Guests?'); // confirmation: true
+  await confirmSheet(page).locator('button', { hasText: 'Confirm' }).click();
+  await expect.poll(() => calls(page)).toEqual([{ domain: 'input_boolean', service: 'toggle', data: { entity_id: 'input_boolean.demo_guest_mode' } }]);
+  await expect(guests).toHaveClass(/active/);
+  await setState(page, 'input_boolean.demo_guest_mode', 'off');
+  await expect(guests).not.toHaveClass(/active/);
+});
+
+/* ---------- rooms in several parts, placeholders, fans without a bowl, new furniture ---------- */
+
+test('a room in two parts: one tab, its part\'s lights under it, a shared glow', async ({ page }) => {
+  await open(page);
+  const tabs = await page.locator('house-control-card .rooms .room:not([hidden]):not(.heat-toggle)').evaluateAll((els) => els.map((e) => e.firstChild.textContent.trim()));
+  expect(tabs).not.toContain('Rec nook');
+  expect(tabs).toContain('Rec room');
+  await page.locator('house-control-card .room', { hasText: 'Rec room' }).click();
+  expect(await tileNames(page)).toContain('Nook light');
+  // the nook's floor glows with the rec room's motion sensor
+  const glows = async () => Object.fromEntries((await liveState(page)).glows.map((g) => [g.room, g.on]));
+  expect(await glows()).toMatchObject({ rec: 0, rec_nook: 0 });
+  await setLive(page, 'binary_sensor.demo_rec_motion', 'on');
+  expect(await glows()).toMatchObject({ rec: 1, rec_nook: 1 });
+  // the nook's name means the rec room; the person stands in its biggest rectangle
+  await setLive(page, 'sensor.demo_person_area', 'Rec nook');
+  expect((await liveState(page)).people[0]).toEqual({ name: 'Demo Person', room: 'rec', floor: 'main' });
+});
+
+test('a placeholder light: unlit, "Not connected", not tappable, not counted', async ({ page }) => {
+  await open(page);
+  await page.locator('house-control-card .room', { hasText: 'Rec room' }).click();
+  const tile = page.locator('house-control-card .tile[aria-label="Nook light"]');
+  await expect(tile).toHaveClass(/unavailable/);
+  await expect(tile.locator('.tile-sub')).toHaveText('Not connected');
+  const on = () => page.evaluate(() => window.__test.card._ui.debug.store.state.lights['rec.nook'].on);
+  await tile.click();
+  await page.locator('house-control-card .list-head .pill', { hasText: 'All on' }).click();
+  await page.waitForTimeout(400);
+  expect(await on()).toBe(false);
+  // "x of N on" for the rec room counts its real lights only
+  const real = await page.evaluate(() => window.__test.card._ui.debug.config.lights.filter((l) => ['rec', 'rec_nook'].includes(l.room) && !l.placeholder).length);
+  await expect(page.locator('house-control-card .list-head .title')).toHaveText(`Rec room · ${real} of ${real} on`);
+  await page.locator('house-control-card .scene:not(.floor-action)', { hasText: 'Bright' }).click();
+  await page.waitForTimeout(300);
+  expect(await on()).toBe(false);
+  expect(await page.evaluate(() => window.__test.card._ui.debug.world.lights.get('rec.nook').goal)).toBe(0);
+});
+
+test('a fan without a bowl: a fan on its tile, no light, blades turning while its switch is on', async ({ page }) => {
+  await open(page);
+  await page.locator('house-control-card .room', { hasText: 'Office' }).click();
+  const tile = page.locator('house-control-card .tile[aria-label="Office fan"]');
+  // the same fan icon as the fan light's (type "fan"), though its entity is a switch (a plug otherwise)
+  const drawing = (label) => page.locator(`house-control-card .tile[aria-label="${label}"] .bubble svg`).evaluate((el) => el.innerHTML);
+  const plug = await page.locator('house-control-card .tile[aria-label="Desk lamp"] .bubble svg').evaluate((el) => el.innerHTML);
+  await page.locator('house-control-card .room', { hasText: 'Rec room' }).click();
+  const fanIcon = await drawing('Fan light');
+  await page.locator('house-control-card .room', { hasText: 'Office' }).click();
+  expect(await drawing('Office fan')).toBe(fanIcon);
+  expect(fanIcon).not.toBe(plug);
+  const unit = () => page.evaluate(() => {
+    const u = window.__test.card._ui.debug.world.lights.get('office.fan');
+    return { lights: u.lights.length, glow: u.glow.length, angle: u.model.getObjectByName('fan-blades').rotation.y };
+  });
+  const before = await unit();
+  expect([before.lights, before.glow]).toEqual([0, 0]);
+  await page.waitForTimeout(400);
+  expect((await unit()).angle).toBe(before.angle);
+  await resetCalls(page);
+  await tile.click();
+  await expect.poll(() => calls(page)).toContainEqual({ domain: 'switch', service: 'turn_on', data: { entity_id: 'switch.demo_office_fan' } });
+  await page.waitForTimeout(200);
+  const a = (await unit()).angle;
+  await page.waitForTimeout(500);
+  expect(Math.abs((await unit()).angle - a)).toBeGreaterThan(0.1);
+  expect((await liveState(page)).fans).toContainEqual({ light: 'office.fan', speed: expect.any(Number) });
+  const pool = await page.evaluate(() => window.__test.card._ui.debug.lightPool);
+  expect([...pool.slots.map((s) => s.fixture), ...pool.glowOnly]).not.toContain('office.fan');
+});
+
+test('the new furniture models load without console errors', async ({ page }, info) => {
+  const consoleErrors = [];
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleErrors.push(m.text()); });
+  const errors = await open(page);
+  await page.evaluate(() => {
+    const { card, config } = window.__test;
+    const plan = structuredClone(config.plan);
+    plan.furniture.push(
+      { type: 'washerDryer', pos: [9.6, 9.6], stacked: true, lid: 'top', storey: 'main' },
+      { type: 'showerStall', pos: [5.5, 1.0], glass: false, storey: 'main' },
+      { type: 'walkInCloset', pos: [12.0, 6.5], width: 2.4, depth: 2.2, sides: true, storey: 'main' },
+    );
+    card.setConfig({ ...config, plan });
+  });
+  await page.waitForFunction(() => window.__test.card._ui);
+  const types = await page.evaluate(() => window.__test.card._ui.debug.world.findFurniture(() => true).map(({ item }) => item.type));
+  for (const t of ['washerDryer', 'showerStall', 'daybed', 'walkInCloset']) expect(types).toContain(t);
+  expect(types.filter((t) => t === 'washerDryer')).toHaveLength(2);
+  await toBasement(page);
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: info.outputPath('utility.png') });
+  expect(errors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });

@@ -100,6 +100,18 @@ export function createEditorLinks(getHass) {
      * A scene that runs a Home Assistant script or scene instead of setting lights. `required`:
      * a floor button set to "run" keeps an empty `run` (the plan then says what is missing).
      */
+    /** The input_boolean a floor button with "toggle" switches. */
+    toggleField(item, hooks) {
+      return entityField('Helper to toggle', {
+        get: () => item.toggle || '',
+        set: (v) => { item.toggle = v; },
+        domains: new Set(['input_boolean']),
+        empty: 'Pick an input_boolean.* helper.',
+        hooks,
+        placeholder: 'input_boolean.your_helper',
+      });
+    },
+
     runField(item, hooks, { required = false } = {}) {
       return entityField(required ? 'Script or scene to run' : 'Runs (script.* or scene.*, optional)', {
         get: () => item.run || '',

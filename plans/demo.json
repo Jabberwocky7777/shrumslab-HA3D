@@ -15,21 +15,30 @@
           "active_when": [{ "entity": "media_player.demo_tv", "state": "playing" },
                           { "entity": "input_boolean.demo_movie_mode", "state": "on" }] }
       ] },
-    { "id": "basement", "name": "Basement", "level": -1, "height": 2.4 }
+    { "id": "basement", "name": "Basement", "level": -1, "height": 2.4,
+      "actions": [
+        { "id": "on", "name": "All on", "icon": "sun", "builtin": "all_on" },
+        { "id": "off", "name": "All off", "icon": "moon", "builtin": "all_off" },
+        { "id": "game", "name": "Game night", "icon": "film", "run": "script.demo_movie_mode",
+          "confirmation": { "text": "Dim the bar and start game night?" } },
+        { "id": "guests", "name": "Guests", "icon": "bed", "toggle": "input_boolean.demo_guest_mode", "confirmation": true }
+      ] }
   ],
 
   "rooms": [
     { "id": "bedroom", "name": "Bedroom",  "rect": [0, 0, 4.2, 3.6],     "floor": "walnut", "storey": "main",
       "temperature": "sensor.demo_bedroom_temperature" },
     { "id": "bath",    "name": "Bathroom", "rect": [4.2, 0, 2.2, 3.6],   "floor": "tile", "storey": "main" },
-    { "id": "kitchen", "name": "Kitchen",  "rect": [6.4, 0, 4.0, 3.6],   "floor": "stone", "storey": "main", "area": "demo_kitchen",
+    { "id": "kitchen", "name": "Kitchen",  "rect": [6.4, 0, 4.0, 3.6],   "floor": "stone", "storey": "main", "area": ["demo_kitchen", "Pantry"],
       "occupancy": ["binary_sensor.demo_kitchen_motion"], "temperature": "sensor.demo_kitchen_temperature" },
     { "id": "office",  "name": "Office",   "rect": [10.4, 0, 3.2, 3.6],  "floor": "oak", "storey": "main" },
     { "id": "living",  "name": "Living",   "rect": [0, 3.6, 6.4, 4.6],   "floor": "oak", "storey": "main", "area": "demo_living",
       "occupancy": ["binary_sensor.demo_living_motion"], "temperature": "sensor.demo_living_temperature" },
     { "id": "dining",  "name": "Dining",   "rect": [6.4, 3.6, 4.0, 4.6], "floor": "oak", "storey": "main" },
     { "id": "hall",    "name": "Hall",     "rect": [10.4, 3.6, 3.2, 4.6], "floor": "stone", "storey": "main" },
-    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet", "storey": "main" },
+    { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet", "storey": "main",
+      "occupancy": "binary_sensor.demo_rec_motion" },
+    { "id": "rec_nook", "name": "Rec nook", "rect": [0, 13.2, 3.0, 1.6],  "floor": "carpet", "storey": "main", "part_of": "rec" },
     { "id": "storage", "name": "Storage",  "rect": [8.0, 8.2, 2.4, 2.0],  "floor": "stone", "storey": "main" },
 
     { "id": "bar",     "name": "Bar",      "rect": [0, 0, 6.4, 4.4],     "floor": "walnut", "storey": "basement" },
@@ -96,13 +105,17 @@
     { "type": "treadmill",    "pos": [7.4, 9.4] },
     { "type": "glassCabinet", "pos": [0.9, 13.0],  "rot": 180 },
     { "type": "bookshelf",    "pos": [10.2, 9.3],  "rot": -90 },
+    { "type": "walkInCloset", "pos": [8.3, 9.2],   "rot": 90 },
+    { "type": "daybed",       "pos": [1.5, 14.25], "rot": 180, "trundle": true },
 
     { "type": "wetBar",       "pos": [2.6, 0.33],  "width": 2.4, "storey": "basement" },
     { "type": "pokerTable",   "pos": [2.2, 2.7],   "storey": "basement" },
     { "type": "stairs",       "pos": [5.6, 2.2],   "length": 3.5, "storey": "basement" },
     { "type": "treadmill",    "pos": [7.6, 2.2],   "storey": "basement" },
     { "type": "plant",        "pos": [9.9, 3.9],   "height": 1.2, "storey": "basement" },
-    { "type": "dehumidifier", "pos": [12.9, 0.4],  "storey": "basement" }
+    { "type": "dehumidifier", "pos": [12.9, 0.4],  "storey": "basement" },
+    { "type": "washerDryer",  "pos": [11.9, 0.4],  "storey": "basement" },
+    { "type": "showerStall",  "pos": [13.05, 3.85], "rot": 180, "door": "side", "storey": "basement" }
   ],
 
   "lights": [
@@ -140,6 +153,8 @@
       "link": { "service": "homeassistant", "id": "light.demo_office_ceiling" } },
     { "id": "office.desk",    "name": "Desk lamp",     "room": "office",  "type": "table",   "pos": [12.5, 0.4], "y": 0.75,
       "link": { "service": "homeassistant", "id": "switch.demo_desk_lamp" } },
+    { "id": "office.fan",     "name": "Office fan",    "room": "office",  "type": "fan",     "pos": [11.1, 2.7],
+      "bowl": false, "spin": "light", "link": { "service": "homeassistant", "id": "switch.demo_office_fan" } },
 
     { "id": "hall.main",      "name": "Ceiling",       "room": "hall",    "type": "ceiling", "pos": [12.0, 5.9],
       "link": { "service": "homeassistant", "id": "light.demo_hall_ceiling" } },
@@ -152,10 +167,11 @@
     { "id": "rec.sconces",    "name": "Sconces",       "room": "rec",     "type": "sconce",  "pos": [0.03, 10.6],
       "points": [[0.03, 9.2, 90], [0.03, 12.0, 90]],
       "link": { "service": "homeassistant", "id": "light.demo_rec_sconces" } },
-    { "id": "rec.fan",        "name": "Fan light",     "room": "rec",     "type": "fan",     "pos": [5.2, 9.6], "fan": "fan.demo_rec_fan",
+    { "id": "rec.fan",        "name": "Fan light",     "room": "rec",     "type": "fan",     "pos": [5.2, 9.6], "spin": "fan.demo_rec_fan",
       "link": { "service": "homeassistant", "id": "light.demo_rec_fan_light" } },
     { "id": "rec.dome",       "name": "Entry",         "room": "rec",     "type": "dome",    "pos": [1.85, 8.9],
       "link": { "service": "homeassistant", "id": "light.demo_rec_dome" } },
+    { "id": "rec.nook",       "name": "Nook light",    "room": "rec_nook", "type": "dome",   "pos": [1.5, 13.9], "placeholder": true },
 
     { "id": "bar.pendants",   "name": "Poker table",   "room": "bar",     "type": "pendantBar", "pos": [2.2, 2.7], "y": 1.5,
       "length": 1.2, "link": { "service": "homeassistant", "id": "light.demo_bar_pendants" } },

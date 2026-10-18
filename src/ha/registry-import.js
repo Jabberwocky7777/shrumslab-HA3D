@@ -70,6 +70,12 @@ function spots([x, z, w, d], n) {
   ]);
 }
 
+/** Whether a plan room stands for this area: one of its `area` entries is the area's id or name (any case). */
+export function hasArea(room, area) {
+  const keys = new Set([area.area_id, area.name].filter(Boolean).map((k) => String(k).toLowerCase()));
+  return [].concat(room?.area ?? []).some((e) => typeof e === 'string' && keys.has(e.trim().toLowerCase()));
+}
+
 const nameOf = (entity, states, devices) => {
   const st = states?.[entity.entity_id];
   return entity.name || st?.attributes?.friendly_name || devices.get(entity.device_id)?.name_by_user
@@ -118,7 +124,7 @@ export function buildFromRegistry(registry, { states = {}, plan = null } = {}) {
   const placers = new Map();
   const perFloor = new Map();
   for (const a of areas) {
-    const existing = plan?.rooms?.find((r) => r.area === a.area_id) || plan?.rooms?.find((r) => !r.area && r.name?.toLowerCase() === a.name.toLowerCase());
+    const existing = plan?.rooms?.find((r) => hasArea(r, a)) || plan?.rooms?.find((r) => r.area == null && r.name?.toLowerCase() === a.name.toLowerCase());
     if (existing) { roomFor.set(a.area_id, { id: existing.id, rect: existing.rect, existing: true }); continue; }
     const storey = multi ? floorFor.get(a.floor_id ?? null) : null;
     perFloor.set(storey, (perFloor.get(storey) || 0) + 1);

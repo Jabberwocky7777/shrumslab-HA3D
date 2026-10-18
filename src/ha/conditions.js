@@ -1,4 +1,4 @@
-// `active_when` of scenes and floor buttons with `run`: when Home Assistant's states match, the
+// `active_when` of scenes and floor buttons with `run` (or `toggle`): when Home Assistant's states match, the
 // button shows as active. A list means every condition must match.
 import { ConfigError } from '../../upstream/config.js';
 
@@ -8,7 +8,7 @@ const ENTITY_ID = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 export function normalizeActiveWhen(what, value, { hasRun, exists = () => {} }) {
   if (value == null) return null;
   const list = Array.isArray(value) ? value : [value];
-  if (!hasRun) throw new ConfigError(`${what}: "active_when" only works with "run" (a built-in scene shows as active by itself)`);
+  if (!hasRun) throw new ConfigError(`${what}: "active_when" only works with "run" or "toggle" (a built-in scene shows as active by itself)`);
   if (!list.length) throw new ConfigError(`${what}: "active_when" is an empty list`);
   return list.map((c, i) => {
     const where = list.length > 1 ? `${what} active_when #${i + 1}` : `${what} active_when`;
