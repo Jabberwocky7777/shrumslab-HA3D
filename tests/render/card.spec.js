@@ -1012,10 +1012,9 @@ test('a fan without a bowl: a fan on its tile, no light, blades turning while it
   await resetCalls(page);
   await tile.click();
   await expect.poll(() => calls(page)).toContainEqual({ domain: 'switch', service: 'turn_on', data: { entity_id: 'switch.demo_office_fan' } });
-  await page.waitForTimeout(200);
+  // turning: wait for frames rather than a fixed time (software WebGL on CI draws few of them)
   const a = (await unit()).angle;
-  await page.waitForTimeout(500);
-  expect(Math.abs((await unit()).angle - a)).toBeGreaterThan(0.1);
+  await expect.poll(async () => Math.abs((await unit()).angle - a), { timeout: 10000 }).toBeGreaterThan(0.1);
   expect((await liveState(page)).fans).toContainEqual({ light: 'office.fan', speed: expect.any(Number) });
   const pool = await page.evaluate(() => window.__test.card._ui.debug.lightPool);
   expect([...pool.slots.map((s) => s.fixture), ...pool.glowOnly]).not.toContain('office.fan');
