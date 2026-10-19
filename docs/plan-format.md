@@ -389,7 +389,7 @@ in several parts shows them in its largest rectangle. When the state matches no 
 | Where | Field | Meaning |
 | --- | --- | --- |
 | a light of type `fan` | `spin` (or `fan`) | A `fan.*`: the blades spin with its `percentage` and stop when it is off. `"light"`: they spin while the light is on (see [Fans](#fans)) |
-| an entity | `fan` | A plan entity whose entity is a `fan.*` spins its icon; `fan` can name another fan |
+| an entity | `fan` | A plan entity whose entity is a `fan.*` spins its icon; `fan` can name another fan, or be `false` to keep the icon still. The blades of a `fan` light are not affected |
 | `tv` / `mediaWall` furniture | `entity` | A `media_player.*`: the screen glows while it plays or is paused, showing its picture when Home Assistant serves one itself (its own signed address, never another site). Tapping the screen opens more-info |
 | a light | `power` | A `sensor.*` in W or kW, shown on the light's tile while it is on: "100% · 18 W" |
 

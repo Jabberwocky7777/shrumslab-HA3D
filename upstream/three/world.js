@@ -10,6 +10,7 @@ import { LightUnit } from './lights.js';
 import { ACUnit } from './ac.js';
 import { floorView, floorOfRoom, defaultFloor } from '../../src/ha/floors.js'; // ha3d: floors
 import { createLightPool, QUALITY, DEFAULT_QUALITY, NO_SHADOW_TYPES } from '../../src/ha/light-pool.js'; // ha3d: light budget
+import { mergeStatic } from '../../src/ha/static-merge.js'; // ha3d: fewer draw calls
 
 export const STAGE_BG = '#0a0e1a';
 
@@ -28,8 +29,10 @@ const DIM_OPACITY = 0.2;   // ha3d: floors that are not selected, in the stacked
 // each has { group, hit, anchor(v), update(dt) } and its hit mesh carries { kind: 'entity', id }.
 // ha3d: `quality` (low | medium | high) sizes the light pool, bloom, multisampling and pixel ratio.
 // ha3d: `live` (src/ha/live.js) are more units { id, room | floor, group, hit?, update(dt) } drawn on
-// their floor; their hit meshes carry { kind: 'live', id }.
-export function createWorld(canvas, config, store, { onHover, onPick, background = STAGE_BG, entities = new Map(), quality = DEFAULT_QUALITY, live = [] }) {
+// their floor; their hit meshes carry { kind: 'live', id }. A unit with `ambient: true` (spinning
+// fans) is endless, cheap motion: the loop draws it at `animationFps` at most, stops drawing it
+// after `idlePause` seconds without input (0: never), and `busy()` (a sheet is open) lifts the cap.
+export function createWorld(canvas, config, store, { onHover, onPick, background = STAGE_BG, entities = new Map(), quality = DEFAULT_QUALITY, live = [], animationFps = 20, idlePause = 30, busy = () => false }) {
   const q = QUALITY[quality] || QUALITY[DEFAULT_QUALITY]; // ha3d
   // ha3d: prefers-reduced-motion: no intro fly-in, no pulses, the camera jumps instead of gliding
   const motion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -65,9 +68,12 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     const view = floorView(config, f.id);
     const group = new THREE.Group();
     const house = buildHouse(view, camDir);
-    group.add(house.group, buildFurniture(view.furniture));
+    const furniture = buildFurniture(view.furniture);
+    group.add(house.group, furniture);
+    // ha3d: one mesh per material for everything static on the floor; room floors stay as hit targets
+    const merge = mergeStatic(group, [house.group, furniture], { hitTargets: house.floors });
     scene.add(group);
-    levels.set(f.id, { cfg: f, group, house, H: f.height, y: 0, goalY: 0, hits: [...house.floors], dimmed: false });
+    levels.set(f.id, { cfg: f, group, house, H: f.height, y: 0, goalY: 0, hits: [...house.floors], dimmed: false, merge });
   }
   const levelOf = (roomId) => levels.get(floorOf.get(roomId)) || levels.values().next().value;
   let current = defaultFloor(config);
@@ -79,6 +85,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     const unit = new LightUnit(cfg, level.H);
     lights.set(cfg.id, unit);
     level.group.add(unit.group);
+    unit.group.updateMatrix(); unit.group.matrixAutoUpdate = false; // ha3d: the fixture never moves (its model does)
     level.hits.push(unit.hit);
   }
   const acs = new Map();
@@ -87,6 +94,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     const unit = new ACUnit(cfg);
     acs.set(cfg.id, unit);
     level.group.add(unit.group);
+    unit.group.updateMatrix(); unit.group.matrixAutoUpdate = false; // ha3d: mounted on its wall
     level.hits.push(unit.hit);
   }
   for (const unit of entities.values()) {
@@ -381,6 +389,12 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   }, { passive: false });
   canvas.style.cursor = 'grab';
 
+  // ha3d: ambient units (fans) only move on floors that are shown and not dimmed
+  const floorAnimated = (id) => {
+    const level = levels.get(id);
+    return Boolean(level?.group.visible) && !level.dimmed;
+  };
+
   /* ---------- loop ---------- */
 
   let raf = 0;
@@ -388,14 +402,46 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   let awake = 0;       // frames still owed after the last change
   let running = false;
   let shadowFrames = 3;
+  // ha3d: ambient motion (spinning fans) is capped, and rests after `idlePause` seconds without input
+  const ambientUnits = live.filter((u) => u.ambient);
+  const motionUnits = live.filter((u) => !u.ambient);
+  const fps = clamp(Number(animationFps) || 20, 5, 60);
+  const idleMs = Math.max(0, Number(idlePause) || 0) * 1000;
+  let timer = 0;         // the next capped ambient frame
+  let lastAmbient = 0;   // when ambient units last moved
+  let lastRender = 0;
+  let lastInput = performance.now();
+  const loop = { frames: 0, renders: 0 }; // for tests and the stats overlay
+  const resting = (now = performance.now()) => idleMs > 0 && now - lastInput > idleMs;
 
   function wake(frames = 2) {
     awake = Math.max(awake, frames);
+    if (timer) { clearTimeout(timer); timer = 0; } // ha3d: full rate at once
     if (running && !raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+
+  function render(dt, now) {
+    if (pool.sync()) shadowFrames = Math.max(shadowFrames, 2); // ha3d: new lights, new shadow maps
+    if (shadowFrames > 0) { renderer.shadowMap.needsUpdate = true; shadowFrames--; }
+    renderer.info.reset(); // ha3d: renderer.info counts the whole frame (every pass), see renderInfo()
+    composer.render(dt);
+    lastRender = now;
+    loop.renders++;
+  }
+
+  // ha3d: ambient units (fans) move by the time since they last moved, whatever the frame rate
+  function moveAmbient(now) {
+    const adt = Math.min(0.5, Math.max(0, (now - lastAmbient) / 1000));
+    lastAmbient = now;
+    if (resting(now)) return false;
+    let any = false;
+    for (const unit of ambientUnits) any = unit.update(adt) || any;
+    return any;
   }
 
   function frame(now) {
     raf = 0;
+    loop.frames++; // ha3d
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (still()) for (const unit of [...lights.values(), ...entities.values()]) unit.pulse = 0; // ha3d
@@ -403,17 +449,32 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     for (const unit of lights.values()) active = unit.update(dt) || active;
     for (const unit of acs.values()) active = unit.update(dt) || active;
     for (const unit of entities.values()) active = unit.update(dt) || active; // ha3d
-    for (const unit of live) active = unit.update(dt) || active; // ha3d
-    if (active || awake > 0) {
-      if (pool.sync()) shadowFrames = Math.max(shadowFrames, 2); // ha3d: new lights, new shadow maps
+    for (const unit of motionUnits) active = unit.update(dt) || active; // ha3d
+    if (shadowFrames > 0) active = true;
+    if (active || awake > 0 || busy()) {
+      // ha3d: something else moves (or a sheet is open): fans go along at the full rate
+      const ambient = moveAmbient(now);
+      if (active || awake > 0 || ambient) {
+        render(dt, now);
+        awake = Math.max(0, awake - 1);
+        if (hovered && active) onHover({ ...hovered, ...screenAnchor(hovered) });
+      }
+      if (running && (active || awake > 0 || ambient)) raf = requestAnimationFrame(frame);
+      return;
     }
-    if (shadowFrames > 0) { renderer.shadowMap.needsUpdate = true; shadowFrames--; active = true; }
-    if (active || awake > 0) {
-      composer.render(dt);
-      awake = Math.max(0, awake - 1);
-      if (hovered && active) onHover({ ...hovered, ...screenAnchor(hovered) });
+    // ha3d: only fans move: draw them at `fps` at most, and not at all while resting
+    if (!ambientUnits.length || resting(now)) return;
+    if (now - lastRender >= 1000 / fps - 4) {
+      if (!moveAmbient(now)) return; // nothing visible spins: sleep
+      render(dt, now);
     }
-    if (running && (active || awake > 0)) raf = requestAnimationFrame(frame);
+    scheduleAmbient();
+  }
+
+  function scheduleAmbient() {
+    if (!running || raf || timer) return;
+    const delay = Math.max(0, lastRender + 1000 / fps - performance.now());
+    timer = setTimeout(() => { timer = 0; if (running && !raf) raf = requestAnimationFrame(frame); }, delay);
   }
 
   function resize() {
@@ -586,7 +647,29 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
     setRunning(on) {
       running = on;
       if (on) wake(4);
-      else if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      else {
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        if (timer) { clearTimeout(timer); timer = 0; } // ha3d
+      }
+    },
+
+    // ha3d: someone touched the card: fans spin again (after a rest) and the loop runs at full rate
+    interact() {
+      const was = resting();
+      lastInput = performance.now();
+      if (was) lastAmbient = lastInput;
+      wake();
+    },
+    floorAnimated, // ha3d
+    // ha3d: for tests and the stats overlay
+    loopStats: () => ({ ...loop, resting: resting(), fps, idlePause: idleMs / 1000, sleeping: !raf && !timer }),
+    renderInfo() {
+      const { render: r, memory, programs } = renderer.info;
+      return {
+        calls: r.calls, triangles: r.triangles, geometries: memory.geometries, textures: memory.textures,
+        programs: programs?.length ?? 0,
+        merged: Object.fromEntries([...levels].map(([id, l]) => [id, { before: l.merge.before, after: l.merge.after }])),
+      };
     },
 
     dispose() {
@@ -594,6 +677,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
       running = false;
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
+      clearTimeout(timer); // ha3d
       composer.dispose();
       target.dispose();
       // ha3d: the card comes and goes with every dashboard re-render: free the GPU memory too.
@@ -619,10 +703,12 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
       }
       pool.sync(true); // ha3d
       renderer.shadowMap.needsUpdate = true;
+      renderer.info.reset(); // ha3d
       composer.render(0);
     },
   };
 
+  renderer.info.autoReset = false; // ha3d: reset once per frame in render(), so every pass is counted
   syncAll({ instant: true });
   layout(); // ha3d: floors
   resize();

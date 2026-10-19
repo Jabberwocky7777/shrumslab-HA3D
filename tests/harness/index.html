@@ -23,6 +23,8 @@
       if (!many) config.power = 'sensor.demo_house_power';
       if (params.get('sun')) config.sun = true; // ?sun=1
       if (params.get('full_bleed')) config.full_bleed = true; // ?full_bleed=1
+      for (const key of ['animation_fps', 'idle_pause']) if (params.get(key)) config[key] = Number(params.get(key)); // ?idle_pause=2
+      if (params.get('debug_stats')) config.debug_stats = true; // ?debug_stats=1
       const hass = createMockHass({
         states: many ? { ...demoStates(), ...manyLightsStates(20) } : demoStates(),
         registry: params.get('registry') === 'ws' ? 'ws' : true, // ?registry=ws: only the websocket commands

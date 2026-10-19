@@ -530,7 +530,7 @@ test('the card editor: ha-form for the options, a summary of the plan, never the
     const f = window.__test.editor.shadowRoot.querySelector('ha-form');
     return { schema: f.schema.map((s) => s.name), data: f.data, hasHass: Boolean(f.hass) };
   });
-  expect(form.schema).toEqual(['height', 'quality', 'temperature_unit', 'safe_area', 'full_bleed', 'stacked_view_default', 'sun', 'power']);
+  expect(form.schema).toEqual(['height', 'quality', 'temperature_unit', 'safe_area', 'full_bleed', 'stacked_view_default', 'sun', 'power', 'animation_fps', 'idle_pause', 'debug_stats']);
   expect(form.data).toEqual({ height: '100vh', power: 'sensor.demo_house_power' });
   expect(form.hasHass).toBe(true);
   // a change from ha-form comes back as config-changed, with the plan untouched
@@ -1043,4 +1043,158 @@ test('the new furniture models load without console errors', async ({ page }, in
   await page.screenshot({ path: info.outputPath('utility.png') });
   expect(errors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+/* ---------- the render loop: spinning fans, idle rest, draw calls ---------- */
+
+const loopStats = (page) => page.evaluate(() => window.__test.card._ui.debug.loop);
+const recBlades = (page) => page.evaluate(() => window.__test.card._ui.debug.world.lights.get('rec.fan').model.getObjectByName('fan-blades').rotation.y);
+// rAF callbacks and renders during `ms`, measured in the page
+const countDuring = (page, ms) => page.evaluate(async (wait) => {
+  const { world } = window.__test.card._ui.debug;
+  const a = world.loopStats();
+  await new Promise((r) => { setTimeout(r, wait); });
+  const b = world.loopStats();
+  return { frames: b.frames - a.frames, renders: b.renders - a.renders };
+}, ms);
+// Ends the intro, fades and camera moves at once (software WebGL draws few frames): then only the
+// rec room's fan (on in the demo) moves.
+const settleLoop = async (page) => {
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(10));
+  await page.waitForTimeout(600);
+};
+// Waits until the loop has drawn nothing for half a second.
+const quiet = (page) => expect.poll(async () => (await countDuring(page, 500)).frames, { timeout: 20000 }).toBe(0);
+
+test('while only fans move, the frame rate is capped at animation_fps', async ({ page }) => {
+  await open(page, '?animation_fps=10');
+  await settleLoop(page);
+  expect((await loopStats(page)).fps).toBe(10);
+  const { frames, renders } = await countDuring(page, 2000);
+  expect(renders).toBeGreaterThan(0); // the fan keeps turning
+  expect(renders).toBeLessThanOrEqual(10 * 2 + 3);
+  // no requestAnimationFrame at the display's rate in between: about one per render
+  expect(frames).toBeLessThanOrEqual(renders + 3);
+});
+
+test('after idle_pause the loop rests (no frames), the fans freeze, and a tap wakes it', async ({ page }) => {
+  await open(page, '?idle_pause=2');
+  await settleLoop(page);
+  await expect.poll(async () => (await loopStats(page)).resting, { timeout: 10000 }).toBe(true);
+  await quiet(page);
+  const angle = await recBlades(page);
+  expect((await countDuring(page, 1200)).frames).toBe(0);
+  expect(await recBlades(page)).toBe(angle);
+  // Home Assistant state still updates the model while resting, with a few frames only
+  await setLive(page, 'light.demo_rec_cans', 'on', { brightness: 200 });
+  await expect.poll(() => page.evaluate(() => window.__test.card._ui.debug.world.lights.get('rec.cans').level), { timeout: 20000 }).toBeGreaterThan(0.5);
+  await quiet(page); // the fade ends, and the loop sleeps again
+  expect((await countDuring(page, 1000)).frames).toBe(0);
+  expect(await recBlades(page)).toBe(angle);
+  // a tap on the 3D view: the fan turns again
+  const box = await page.locator('house-control-card canvas').boundingBox();
+  await page.mouse.click(box.x + 20, box.y + box.height - 60);
+  expect((await loopStats(page)).resting).toBe(false);
+  await expect.poll(async () => Math.abs((await recBlades(page)) - angle), { timeout: 10000 }).toBeGreaterThan(0.1);
+  expect((await countDuring(page, 1000)).frames).toBeGreaterThan(0);
+});
+
+test('a spinning fan on a floor that is not shown (or dimmed) does not keep the loop awake', async ({ page }) => {
+  await open(page);
+  await settleLoop(page);
+  expect((await countDuring(page, 1000)).renders).toBeGreaterThan(0); // the rec fan, on the main floor
+  await page.locator('house-control-card .floors .floor-chip', { hasText: 'Basement' }).click();
+  await settleLoop(page);
+  await quiet(page); // with the fan still counted this would never happen
+  const angle = await recBlades(page);
+  expect(await countDuring(page, 1200)).toEqual({ frames: 0, renders: 0 });
+  expect(await recBlades(page)).toBe(angle);
+  // the stacked view with the basement selected: the main floor is dimmed, its fan stays still
+  await page.locator('house-control-card .floor-stack').click();
+  await settleLoop(page);
+  await quiet(page);
+  expect(await countDuring(page, 1200)).toEqual({ frames: 0, renders: 0 });
+  expect(await recBlades(page)).toBe(angle);
+});
+
+test('an entity with "fan": false keeps its icon still', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const { card, config, hass } = window.__test;
+    const plan = structuredClone(config.plan);
+    plan.entities.find((e) => e.entity === 'fan.demo_bedroom_fan').fan = false;
+    card.setConfig({ ...config, plan });
+    hass.set('fan.demo_bedroom_fan', { ...hass.states['fan.demo_bedroom_fan'], state: 'on' });
+  });
+  await page.waitForFunction(() => window.__test.card._ui);
+  const fans = (await page.evaluate(() => window.__test.card._ui.debug.live.debug().fans)).map((f) => f.entity);
+  expect(fans).not.toContain('fan.demo_bedroom_fan');
+  expect(fans).toContain('fan.demo_rec_fan'); // a fan light's blades are not affected
+});
+
+test('draw calls stay within budget, and switching floors leaks no geometry or texture', async ({ page }) => {
+  await open(page);
+  const info = () => page.evaluate(() => new Promise((r) => {
+    const { world } = window.__test.card._ui.debug;
+    world.wake(3);
+    setTimeout(() => r(world.renderInfo()), 700);
+  }));
+  const main = await info();
+  expect(Object.keys(main)).toEqual(expect.arrayContaining(['calls', 'triangles', 'geometries', 'textures', 'programs']));
+  expect(main.calls).toBeLessThan(150);
+  // static meshes are merged: far fewer meshes than pieces
+  expect(main.merged.main.after * 5).toBeLessThan(main.merged.main.before);
+  const chip = (name) => page.locator('house-control-card .floors .floor-chip', { hasText: name });
+  await chip('Basement').click();
+  await settleLoop(page);
+  expect((await info()).calls).toBeLessThan(150);
+  await page.locator('house-control-card .floor-stack').click();
+  await settleLoop(page);
+  expect((await info()).calls).toBeLessThan(400);
+  // one full round first (the dimmed look is made once), then 20 more: nothing grows
+  await page.locator('house-control-card .floor-stack').click();
+  await chip('Main').click();
+  await page.waitForTimeout(300);
+  const before = await info();
+  for (let i = 0; i < 20; i++) {
+    await chip(i % 2 ? 'Main' : 'Basement').click();
+    await page.locator('house-control-card .floor-stack').click();
+    await page.waitForTimeout(60);
+    await page.locator('house-control-card .floor-stack').click();
+  }
+  await chip('Main').click();
+  await page.waitForTimeout(500);
+  const after = await info();
+  expect(after.geometries).toBeLessThanOrEqual(before.geometries);
+  expect(after.textures).toBeLessThanOrEqual(before.textures);
+});
+
+test('debug_stats shows the frame rate, draw calls, geometries and textures', async ({ page }) => {
+  await open(page, '?debug_stats=1');
+  await expect(page.locator('house-control-card .hc-stats')).toHaveText(/^\d+ fps · \d+ calls · \d+ geo · \d+ tex/);
+  await open(page);
+  await expect(page.locator('house-control-card .hc-stats')).toHaveCount(0);
+});
+
+test('taps still reach rooms and lights after the static meshes are merged', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(3));
+  const room = await page.evaluate(() => {
+    const { world, config } = window.__test.card._ui.debug;
+    const r = config.rooms.find((x) => x.id === 'kitchen');
+    const group = world.floorGroup('main');
+    const hit = [];
+    group.traverse((o) => { if (o.userData.kind === 'room' && o.userData.id === r.id) hit.push(o); });
+    return { proxies: hit.length, visible: hit.some((o) => o.visible) };
+  });
+  expect(room.proxies).toBe(1);
+  expect(room.visible).toBe(false); // drawn by the merged mesh, picked through the invisible original
+  await resetCalls(page);
+  const spots = await page.evaluate(() => {
+    const { world } = window.__test.card._ui.debug;
+    return world.screenOf(world.lights.get('kitchen.spots').hit);
+  });
+  const box = await page.locator('house-control-card canvas').boundingBox();
+  await page.mouse.click(box.x + spots.x, box.y + spots.y);
+  await expect.poll(() => calls(page)).toContainEqual({ domain: 'light', service: 'turn_on', data: { entity_id: 'light.demo_kitchen_spots' } });
 });

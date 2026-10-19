@@ -20,7 +20,7 @@ import { isActive } from './conditions.js';
 import { createLive, daylightOf, wattsLabel } from './live.js';
 import { liveEntities } from './live-fields.js';
 import { icon as iconEl } from '../../upstream/ui/icons.js';
-import { checkOptions } from './options.js';
+import { checkOptions, DEFAULT_ANIMATION_FPS, DEFAULT_IDLE_PAUSE } from './options.js';
 import { savePlan, exportPlan, pickPlanFile, diffPlans, deepEqual, SaveFallback } from './plan-store.js';
 import { openEditor } from './editor-dialog.js';
 import { HouseControlCardEditor, ensureHaForm } from './card-editor.js';
@@ -345,6 +345,10 @@ function buildUi(card, plan, firstHass) {
     entities: markers,
     live: live.units,
     quality: card._config.quality || DEFAULT_QUALITY,
+    // spinning fans: a capped frame rate, and a rest after a while without input
+    animationFps: card._config.animation_fps ?? DEFAULT_ANIMATION_FPS,
+    idlePause: card._config.idle_pause ?? DEFAULT_IDLE_PAUSE,
+    busy: () => panel.card.classList.contains('detail'), // a device sheet is open
     onPick(target) {
       if (!target) return;
       if (target.kind === 'light') {
@@ -407,6 +411,12 @@ function buildUi(card, plan, firstHass) {
     if (swiped && panel.closeSheet()) haptic('light');
   }, opts);
   root.addEventListener('pointercancel', () => { edge = null; }, opts);
+  // Any touch, pointer or wheel input wakes the fans after a rest and runs the loop at full rate.
+  for (const type of ['pointerdown', 'pointermove', 'touchstart', 'wheel']) {
+    root.addEventListener(type, () => world.interact(), { ...opts, passive: true });
+  }
+  // A fan that starts, stops or changes speed is worth spinning again, rest or not.
+  const unwatchSpin = store.on(() => { if (live.spinChanged()) world.interact(); });
 
   /* ---------- Home Assistant state ---------- */
 
@@ -448,6 +458,7 @@ function buildUi(card, plan, firstHass) {
     const conditions = conditionsChanged();
     if (conditions || force) {
       live.sync(hass.states, hass.areas);
+      if (live.spinChanged()) world.interact();
       if (sunOn) world.setDaylight(daylightOf(hass.states['sun.sun']));
     }
     if (devices || entities) { panel.refresh(); world.wake(); } else if (conditions) panel.refresh();
@@ -473,6 +484,22 @@ function buildUi(card, plan, firstHass) {
   document.addEventListener('visibilitychange', applyRunning, { signal: listeners.signal });
   applyRunning();
 
+  // `debug_stats: true`: frame rate, draw calls, geometries and textures over the stage.
+  let statsTimer = 0;
+  if (card._config.debug_stats) {
+    const stats = h('div.hc-stats', { 'aria-hidden': 'true' });
+    root.append(stats);
+    let prev = { renders: world.loopStats().renders, at: performance.now() };
+    statsTimer = setInterval(() => {
+      const loop = world.loopStats();
+      const info = world.renderInfo();
+      const now = performance.now();
+      const fps = ((loop.renders - prev.renders) * 1000) / Math.max(1, now - prev.at);
+      prev = { renders: loop.renders, at: now };
+      stats.textContent = `${fps.toFixed(0)} fps · ${info.calls} calls · ${info.geometries} geo · ${info.textures} tex${loop.resting ? ' · resting' : ''}`;
+    }, 500);
+  }
+
   return {
     update(next) {
       hass = next;
@@ -484,9 +511,18 @@ function buildUi(card, plan, firstHass) {
     setVisible(on) { visible = on; applyRunning(); },
     toast,
     // for the render test and the browser console
-    get debug() { return { store, world, panel, config, markers, live, get lightPool() { return world.lightPool(); } }; },
+    get debug() {
+      return {
+        store, world, panel, config, markers, live,
+        get lightPool() { return world.lightPool(); },
+        get renderInfo() { return world.renderInfo(); }, // draw calls, triangles, geometries, textures, programs
+        get loop() { return world.loopStats(); }, // frames, renders, resting
+      };
+    },
     dispose() {
       listeners.abort();
+      unwatchSpin();
+      clearInterval(statsTimer);
       io.disconnect();
       resizer.disconnect();
       bridge.dispose();

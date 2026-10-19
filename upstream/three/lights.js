@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { box, cyl, mat, at } from './kit.js';
 import { extraFixtures } from './extras.js'; // ha3d: extra light fixtures
+import { mergeChildren } from '../../src/ha/static-merge.js'; // ha3d: fewer draw calls
 
 const STOPS = [
   [2200, new THREE.Color('#ff9438')],
@@ -169,6 +170,12 @@ export class LightUnit {
     this.group.add(this.model);
 
     this.glow = f.glow.map((m) => m.material);
+    // ha3d: fewer draw calls: the glow as one mesh (it always changes as a whole), the body in as
+    // few meshes as its materials allow, and a fan's blades as one mesh inside their spinning group
+    if (this.glow.length > 1) { mergeChildren(this.model, f.glow, { material: this.glow[0] }); this.glow = [this.glow[0]]; }
+    mergeChildren(this.model, f.parts);
+    const blades = this.model.getObjectByName('fan-blades');
+    if (blades) mergeChildren(blades, [...blades.children]);
     this.lights = f.lights;
     for (const l of this.lights) {
       this.group.add(l);

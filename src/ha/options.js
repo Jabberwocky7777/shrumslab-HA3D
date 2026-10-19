@@ -12,7 +12,13 @@ export const OPTION_SCHEMA = [
   { name: 'stacked_view_default', selector: { boolean: {} } },
   { name: 'sun', selector: { boolean: {} } },
   { name: 'power', selector: { entity: { filter: { domain: 'sensor', device_class: 'power' } } } },
+  { name: 'animation_fps', selector: { number: { min: 5, max: 60, step: 1, mode: 'box' } } },
+  { name: 'idle_pause', selector: { number: { min: 0, max: 3600, step: 5, mode: 'box', unit_of_measurement: 's' } } },
+  { name: 'debug_stats', selector: { boolean: {} } },
 ];
+
+export const DEFAULT_ANIMATION_FPS = 20;
+export const DEFAULT_IDLE_PAUSE = 30;
 
 export const LABELS = {
   height: 'Height (CSS, e.g. 100% or 800px)',
@@ -23,6 +29,9 @@ export const LABELS = {
   stacked_view_default: 'Start in the stacked view (several floors)',
   sun: 'Daylight from the sun’s position',
   power: 'House power sensor',
+  animation_fps: 'Frame rate while only fans move',
+  idle_pause: 'Stop the fans after this long untouched',
+  debug_stats: 'Show performance stats',
 };
 export const HELPERS = {
   height: 'Empty: the card fills the view under the header.',
@@ -32,6 +41,9 @@ export const HELPERS = {
   full_bleed: 'For a kiosk view without Home Assistant’s header: the card also goes under the status bar. Includes the notch setting above.',
   sun: 'Blends between the night look and daylight using sun.sun.',
   power: 'Total watts, shown in the header.',
+  animation_fps: `5 to 60. Empty: ${DEFAULT_ANIMATION_FPS}. Taps, camera moves and state changes always run at full speed.`,
+  idle_pause: `Seconds without a touch before spinning fans freeze and the 3D view rests. 0: never. Empty: ${DEFAULT_IDLE_PAUSE}.`,
+  debug_stats: 'Frame rate, draw calls, geometries and textures over the 3D view.',
 };
 export const OPTION_NAMES = OPTION_SCHEMA.map((s) => s.name);
 
@@ -55,8 +67,14 @@ export function checkOptions(config) {
   if (config.quality != null && !QUALITIES.includes(config.quality)) {
     fail(`"quality" must be ${QUALITIES.join(', ')} (default ${DEFAULT_QUALITY}), not "${config.quality}"`);
   }
-  for (const key of ['safe_area', 'full_bleed', 'stacked_view_default', 'sun']) {
+  for (const key of ['safe_area', 'full_bleed', 'stacked_view_default', 'sun', 'debug_stats']) {
     if (config[key] != null && typeof config[key] !== 'boolean') fail(`"${key}" must be true or false`);
+  }
+  if (config.animation_fps != null && !(Number.isFinite(config.animation_fps) && config.animation_fps >= 5 && config.animation_fps <= 60)) {
+    fail(`"animation_fps" must be a number from 5 to 60 (default ${DEFAULT_ANIMATION_FPS}), not "${config.animation_fps}"`);
+  }
+  if (config.idle_pause != null && !(Number.isFinite(config.idle_pause) && config.idle_pause >= 0)) {
+    fail(`"idle_pause" must be a number of seconds, 0 or more (default ${DEFAULT_IDLE_PAUSE}; 0: never), not "${config.idle_pause}"`);
   }
   if (config.temperature_unit != null && !/^°?[CFcf]$/.test(String(config.temperature_unit))) fail('"temperature_unit" must be C or F');
   if (config.power != null && !(isEntityId(config.power) && config.power.startsWith('sensor.'))) {

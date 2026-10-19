@@ -16,18 +16,35 @@ export function mat(color, { rough = 0.85, metal = 0, emissive = null, emissiveI
   return m;
 }
 
+// ha3d: identical boxes and cylinders (chair legs, cans, slats...) share one geometry, keyed by
+// size, so repeated pieces reuse one buffer. Nothing may change a geometry from here in place.
+const geometries = new Map();
+const shared = (key, make) => {
+  let g = geometries.get(key);
+  if (!g) { g = make(); geometries.set(key, g); }
+  return g;
+};
+const k = (v) => Math.round(v * 1e4);
+
 // Box standing on y = 0, centred on x/z.
 export function box(w, h, d, material, { r = 0.02 } = {}) {
   const radius = Math.max(0, Math.min(r, Math.min(w, h, d) / 2 - 0.001));
-  const geo = radius > 0.002 ? new RoundedBoxGeometry(w, h, d, 2, radius) : new THREE.BoxGeometry(w, h, d);
-  geo.translate(0, h / 2, 0);
+  const rounded = radius > 0.002;
+  const geo = shared(`box|${k(w)}|${k(h)}|${k(d)}|${rounded ? k(radius) : 0}`, () => { // ha3d
+    const g = rounded ? new RoundedBoxGeometry(w, h, d, 2, radius) : new THREE.BoxGeometry(w, h, d);
+    g.translate(0, h / 2, 0);
+    return g;
+  });
   return new THREE.Mesh(geo, material);
 }
 
 // Cylinder standing on y = 0.
 export function cyl(rTop, rBottom, h, material, seg = 28) {
-  const geo = new THREE.CylinderGeometry(rTop, rBottom, h, seg);
-  geo.translate(0, h / 2, 0);
+  const geo = shared(`cyl|${k(rTop)}|${k(rBottom)}|${k(h)}|${seg}`, () => { // ha3d
+    const g = new THREE.CylinderGeometry(rTop, rBottom, h, seg);
+    g.translate(0, h / 2, 0);
+    return g;
+  });
   return new THREE.Mesh(geo, material);
 }
 

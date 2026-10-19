@@ -106,9 +106,17 @@ test('card options are checked', () => {
   assert.throws(() => checkOptions({ temperature_unit: 'K' }), /C or F/);
 });
 
+test('animation_fps, idle_pause and debug_stats are checked', () => {
+  assert.doesNotThrow(() => checkOptions({ animation_fps: 5, idle_pause: 0, debug_stats: true }));
+  assert.doesNotThrow(() => checkOptions({ animation_fps: 60, idle_pause: 600 }));
+  for (const animation_fps of [4, 61, '20', NaN]) assert.throws(() => checkOptions({ animation_fps }), /"animation_fps" must be a number from 5 to 60/, String(animation_fps));
+  for (const idle_pause of [-1, '30', Infinity]) assert.throws(() => checkOptions({ idle_pause }), /"idle_pause" must be a number of seconds/, String(idle_pause));
+  assert.throws(() => checkOptions({ debug_stats: 'on' }), /"debug_stats" must be true or false/);
+});
+
 test('the card editor summarises the plan and never edits it as a form', () => {
   assert.equal(planSummary(demo), '2 floors · 12 rooms · 24 lights · 7 devices');
   assert.equal(planSummary({ rooms: [{}], lights: [] }), '1 room · 0 lights · 0 devices');
   assert.ok(!OPTION_NAMES.includes('plan'));
-  assert.deepEqual(OPTION_NAMES.sort(), ['full_bleed', 'height', 'power', 'quality', 'safe_area', 'stacked_view_default', 'sun', 'temperature_unit']);
+  assert.deepEqual(OPTION_NAMES.sort(), ['animation_fps', 'debug_stats', 'full_bleed', 'height', 'idle_pause', 'power', 'quality', 'safe_area', 'stacked_view_default', 'sun', 'temperature_unit']);
 });

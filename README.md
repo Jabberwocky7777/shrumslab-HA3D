@@ -99,6 +99,9 @@ plan:
 | `quality` | `medium` | `low`, `medium` or `high`: how many real lights and shadows the 3D view uses (see below). |
 | `sun` | `false` | `true`: the 3D view goes from night to daylight with `sun.sun`'s elevation. |
 | `power` | | A `sensor.*` with the house's total power, shown in the header. |
+| `animation_fps` | `20` | 5 to 60: the frame rate while spinning fans are the only thing moving. Taps, camera moves, fades and state changes always run at full speed. |
+| `idle_pause` | `30` | Seconds without a touch, click or scroll on the card before spinning fans freeze and the 3D view stops drawing. `0`: never. Lights, doors and glows still update while it rests; the next touch, or a fan turning on, off or changing speed, starts the fans again. |
+| `debug_stats` | `false` | `true` shows the frame rate, draw calls, geometries and textures over the 3D view. |
 
 ### Quality and big homes
 
@@ -108,6 +111,15 @@ to what the camera frames, brightest first. Every other lamp that is on still gl
 pool of light on the floor; lamps that are off cost nothing. Shadows come from a few of those lights
 only, never from table, floor or strip lights, and never more than the phone's graphics chip can
 take. `low` also skips the bloom glow and renders at a lower resolution: use it on older phones.
+
+### Battery and heat
+
+The 3D view only draws while something moves. Spinning fans would keep it drawing forever, so:
+only fans on the floor you look at turn (not on hidden or dimmed floors); while they are the only
+thing moving the view draws at `animation_fps` (20 by default) instead of the screen's rate; and
+after `idle_pause` seconds (30) without a touch it rests completely. Walls, floors and furniture are
+merged into a few meshes per floor, so the demo house takes about 130 draw calls per floor and 170
+for every floor stacked. `debug_stats: true` shows the numbers on the card.
 
 ### Make it the phone app's default
 

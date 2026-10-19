@@ -62,6 +62,17 @@ test('rooms, lights, entities, furniture and people check their fields', () => {
   f.furniture.find((x) => x.type === 'tv').entity = 'light.demo_x';
   assert.throws(() => validatePlan(f), /media_player\.\*/);
 
+  // an entity's icon spin: on by itself for a fan.* entity, "fan": false turns it off
+  const e = clone();
+  const bedroomFan = () => e.entities.find((x) => x.entity === 'fan.demo_bedroom_fan');
+  bedroomFan().fan = false;
+  assert.equal(validatePlan(e).config.entities.find((x) => x.entity === 'fan.demo_bedroom_fan').fan, null);
+  assert.ok(!liveEntities(validatePlan(e).config).includes('fan.demo_bedroom_fan'));
+  bedroomFan().fan = true;
+  assert.throws(() => validatePlan(e), /"fan": true/);
+  bedroomFan().fan = 'switch.demo_x';
+  assert.throws(() => validatePlan(e), /fan\.\*/);
+
   const ppl = clone();
   ppl.people.push({ name: 'Demo Person', entity: 'sensor.demo_x' });
   assert.throws(() => validatePlan(ppl), /Two people are called/);

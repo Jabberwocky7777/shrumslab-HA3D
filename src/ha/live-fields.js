@@ -75,9 +75,11 @@ export function applyLiveFields(raw, config, { exists = () => {} } = {}) {
     l.power = entityOf(what, 'power', r.power, 'sensor', exists);
   });
 
-  // Entities: a fan.* entity spins its icon; "fan" can point to another one.
+  // Entities: a fan.* entity spins its icon; "fan" can point to another one, or be false: no spin.
   for (const e of config.entities) {
     const what = `Entity "${e.id}"`;
+    if (e.fan === false) { e.fan = null; continue; }
+    need(e.fan !== true, `${what} has "fan": true; give a fan.* entity, or false to keep the icon still`);
     e.fan = entityOf(what, 'fan', e.fan, 'fan', exists) || (domainOf(e.entity) === 'fan' ? e.entity : null);
   }
 

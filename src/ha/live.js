@@ -320,18 +320,33 @@ class PersonUnit {
   update() { return false; }
 }
 
+// Spinning fans: endless motion, so the world treats it as ambient (capped rate, rests when idle).
+// Only fans on a floor that is shown and not dimmed turn, so a hidden fan never keeps the loop awake.
 class FanSpinner {
   constructor(floor) {
     this.floor = floor;
+    this.ambient = true;
     this.group = new THREE.Group();
-    this.items = []; // { entity, spin(angle) } or { key, speed() (turns per second), spin(angle) }
+    // { entity, floor, spin(angle) } or { key, floor, speed() (turns per second), spin(angle) }
+    this.items = [];
     this.speeds = new Map();
+    this.visible = () => true; // set by attach(): world.floorAnimated
+  }
+
+  speedOf(item) {
+    return item.speed ? item.speed() : this.speeds.get(item.entity) || 0;
+  }
+
+  /** What every fan does right now: changes when one starts, stops or changes speed. */
+  signature() {
+    return this.items.map((i) => this.speedOf(i).toFixed(3)).join(',');
   }
 
   update(dt) {
     let any = false;
     for (const item of this.items) {
-      const v = item.speed ? item.speed() : this.speeds.get(item.entity) || 0;
+      if (!this.visible(item.floor)) continue;
+      const v = this.speedOf(item);
       if (!v) continue;
       item.spin(v * Math.PI * 2 * dt);
       any = true;
@@ -398,12 +413,15 @@ export function createLive(config, { lightOn = () => false } = {}) {
 
   let world = null;
   let heatOn = false;
+  let spinSeen = '';
+  const floorOf = new Map(config.rooms.map((r) => [r.id, r.storey]));
   let states = {};
   let areas = null; // Home Assistant's area registry, when the card has it
   const loader = new THREE.TextureLoader();
 
   function attach(w) {
     world = w;
+    if (w.floorAnimated) spinner.visible = w.floorAnimated;
     for (const p of people) w.floorGroup(config.floors[0].id)?.add(p.group);
     // fans: the blades of "fan" lights, the icons of fan entities
     for (const l of config.lights) {
@@ -411,13 +429,14 @@ export function createLive(config, { lightOn = () => false } = {}) {
       const blades = w.lights.get(l.id)?.model.getObjectByName('fan-blades');
       if (!blades) continue;
       const spin = (a) => { blades.rotation.y += a; };
+      const floor = floorOf.get(l.room);
       // spin: "light": the light's own entity (or simulated state) runs the fan
-      if (l.spin === 'light') spinner.items.push({ key: l.id, speed: () => (lightOn(l.id) ? LIGHT_FAN_SPEED : 0), spin });
-      else spinner.items.push({ entity: l.spin, spin });
+      if (l.spin === 'light') spinner.items.push({ key: l.id, floor, speed: () => (lightOn(l.id) ? LIGHT_FAN_SPEED : 0), spin });
+      else spinner.items.push({ entity: l.spin, floor, spin });
     }
     for (const e of config.entities) {
       const marker = w.entities.get(e.id);
-      if (e.fan && marker?.badge) spinner.items.push({ entity: e.fan, spin: (a) => { marker.badge.material.rotation -= a; } });
+      if (e.fan && marker?.badge) spinner.items.push({ entity: e.fan, floor: floorOf.get(e.room), spin: (a) => { marker.badge.material.rotation -= a; } });
     }
     for (const { item, group } of w.findFurniture((it) => Boolean(it.entity))) {
       const tv = tvs.find((t) => t.item === item);
@@ -518,6 +537,16 @@ export function createLive(config, { lightOn = () => false } = {}) {
       const [base, part] = id.split(':');
       const u = byId.get(base);
       return part === 'lock' || part === 'garage' || !part ? u?.hit ?? null : null;
+    },
+    /**
+     * True once each time a fan starts, stops or changes speed (its entity, or the light it spins
+     * with): the card then lets the fans spin again after a rest.
+     */
+    spinChanged() {
+      const now = spinner.signature();
+      if (now === spinSeen) return false;
+      spinSeen = now;
+      return true;
     },
     /** The names of the people who are away (not_home). */
     away: () => config.people.filter((p) => states[p.entity]?.state === 'not_home').map((p) => p.name),
