@@ -442,7 +442,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, background
   function frame(now) {
     raf = 0;
     loop.frames++; // ha3d
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const dt = clamp((now - last) / 1000, 0, 0.05); // ha3d: a frame can start before the wake() that asked for it
     last = now;
     if (still()) for (const unit of [...lights.values(), ...entities.values()]) unit.pulse = 0; // ha3d
     let active = updateRig(dt);

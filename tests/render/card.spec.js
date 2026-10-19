@@ -742,6 +742,7 @@ test('an occupied room glows and the glow fades out after the motion stops', asy
   const fading = await glow('living');
   expect(fading.on).toBe(0);
   expect(fading.level).toBeGreaterThan(0.2); // still fading
+  expect(fading.level).toBeLessThanOrEqual(1); // and only towards off, however slow the frames
   // a few seconds later (simulated: software WebGL draws few frames) it is gone
   await page.evaluate(() => window.__test.card._ui.debug.world.settle(4));
   expect((await glow('living')).level).toBeLessThan(0.05);
@@ -790,8 +791,8 @@ test('fans spin with their percentage and stop when off', async ({ page }) => {
   await open(page);
   const blades = () => page.evaluate(() => window.__test.card._ui.debug.world.lights.get('rec.fan').model.getObjectByName('fan-blades').rotation.y);
   const a = await blades();
-  await page.waitForTimeout(500);
-  expect(Math.abs((await blades()) - a)).toBeGreaterThan(0.1);
+  // turning: wait for frames rather than a fixed time (fans draw at animation_fps; CI draws few frames)
+  await expect.poll(async () => Math.abs((await blades()) - a), { timeout: 20000 }).toBeGreaterThan(0.1);
   expect((await liveState(page)).fans.find((f) => f.entity === 'fan.demo_rec_fan').speed).toBeGreaterThan(0);
   await setLive(page, 'fan.demo_rec_fan', 'off');
   await page.waitForTimeout(100);
@@ -813,7 +814,7 @@ test('a TV glows with its picture from Home Assistant only; tapping it opens mor
   expect((await liveState(page)).tvs[0].on).toBe(false);
   // the screen is a tap target for the media player's dialog
   await page.locator('house-control-card .room', { hasText: 'Living' }).click();
-  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(6)); // the camera is there before the tap
   await page.evaluate(() => { window.__test.events.length = 0; });
   await tapLive(page, 'tv0');
   await expect.poll(() => page.evaluate(() => window.__test.events.filter((e) => e.type === 'hass-more-info').map((e) => e.entityId)))
