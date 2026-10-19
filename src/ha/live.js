@@ -9,6 +9,8 @@ import { MARKER_COLORS, drawIcon } from './markers.js';
 import { availabilityOf } from './mapping.js';
 import { roomOfArea, largestRect } from './rooms.js';
 import { fireplaceScreen } from '../../upstream/three/extras.js';
+import { garageDoor, sectionPose } from './garage.js';
+import { mergeChildren } from './static-merge.js';
 
 const ALERT = new THREE.Color(MARKER_COLORS.alert);
 const OK = new THREE.Color('#5fd38b');
@@ -206,28 +208,38 @@ class DoorUnit {
   }
 }
 
+// A sectional garage door (src/ha/garage.js): its sections ride up the opening and back along the
+// ceiling tracks, one after another. Its frame, tracks and opener are part of the house.
 class GarageUnit {
-  constructor(o, id) {
+  constructor(o, id, rooms) {
     this.id = id;
     this.o = o;
     this.floor = o.storey;
     this.entity = o.cover;
-    const { x, z, len, angle } = line(o);
-    this.head = o.head ?? 2.1;
-    this.group = new THREE.Group();
-    this.group.position.set(x, 0, z);
-    this.group.rotation.y = angle;
-    this.material = new THREE.MeshStandardMaterial({ color: '#d4d0c8', roughness: 0.6, emissive: ALERT, emissiveIntensity: 0 });
-    this.panel = new THREE.Mesh(new THREE.BoxGeometry(len, 1, 0.06), this.material);
-    this.panel.castShadow = true;
-    this.panel.position.x = len / 2;
-    this.group.add(this.panel);
-    // grooves across the door
-    this.lines = new THREE.Group();
-    this.group.add(this.lines);
-    this.hit = hitBox(len, this.head, 0.5, `${id}:garage`);
-    this.hit.position.set(len / 2, this.head / 2, 0);
+    const door = garageDoor(o, rooms);
+    this.group = door.group;
+    this.sections = door.sections;
+    this.head = door.head;
+    this.len = door.frame.len;
+    this.inward = door.frame.inward;
+    this.plane = door.plane;
+    this.windows = door.windows;
+    // Each section is one or two meshes (body, panels and groove; windows); each gets its own
+    // materials so the alert tint never reaches anything else drawn with the same colour.
+    this.materials = [];
+    for (const s of this.sections) {
+      for (const m of mergeChildren(s, [...s.children])) {
+        m.material = m.material.clone();
+        m.material.emissive = ALERT.clone();
+        m.material.emissiveIntensity = 0;
+        m.castShadow = true;
+        this.materials.push(m.material);
+      }
+    }
+    this.hit = hitBox(this.len, this.head, 0.5, `${id}:garage`);
+    this.hit.position.set(this.len / 2, this.head / 2, 0);
     this.group.add(this.hit);
+    this.visible = () => true; // set by attach(): world.floorAnimated
     this.open = 0;
     this.goal = 0;
     this.write();
@@ -239,18 +251,33 @@ class GarageUnit {
   }
 
   write() {
-    // rolls up into the top of the opening
-    const h = Math.max(0.12, this.head * (1 - this.open));
-    this.panel.scale.y = h;
-    this.panel.position.y = this.head - h / 2;
-    this.material.emissiveIntensity = this.open > 0.02 ? 0.25 + 0.45 * this.open : 0;
+    const n = this.sections.length;
+    this.sections.forEach((s, i) => {
+      const p = sectionPose(i, n, this.head, this.open);
+      s.position.set(this.len / 2, p.y, this.inward * (this.plane + p.z));
+      s.rotation.x = this.inward * p.angle;
+    });
+    const tint = this.open > 0.02 ? 0.25 + 0.45 * this.open : 0;
+    for (const m of this.materials) m.emissiveIntensity = tint;
   }
 
   update(dt) {
-    if (Math.abs(this.goal - this.open) < 0.002) return false;
+    if (Math.abs(this.goal - this.open) < 0.002) {
+      if (this.open === this.goal) return false;
+      this.open = this.goal; // fully closed means every section upright
+      this.write();
+      return true;
+    }
+    // like the fans: a door on a floor that is not shown jumps to where it goes
+    if (!this.visible(this.floor)) { this.open = this.goal; this.write(); return false; }
     this.open += (this.goal - this.open) * ease(dt, 2.2);
     this.write();
     return true;
+  }
+
+  /** For tests: where each section is. */
+  state() {
+    return this.sections.map((s) => ({ y: +s.position.y.toFixed(3), z: +s.position.z.toFixed(3), angle: +s.rotation.x.toFixed(3) }));
   }
 }
 
@@ -403,7 +430,11 @@ export function createLive(config, { lightOn = () => false } = {}) {
   const doors = [];
   const garages = [];
   config.openings.forEach((o, i) => {
-    if (o.type === 'garage') { const u = new GarageUnit(o, `opening${i}`); garages.push(u); units.push(u); } else if (o.contact || o.lock) {
+    if (o.type === 'garage') {
+      const u = new GarageUnit(o, `opening${i}`, config.rooms.filter((r) => r.storey === o.storey));
+      garages.push(u);
+      units.push(u);
+    } else if (o.contact || o.lock) {
       const u = new DoorUnit(o, `opening${i}`);
       doors.push(u);
       units.push(u);
@@ -459,7 +490,11 @@ export function createLive(config, { lightOn = () => false } = {}) {
 
   function attach(w) {
     world = w;
-    if (w.floorAnimated) { spinner.visible = w.floorAnimated; fires.visible = w.floorAnimated; }
+    if (w.floorAnimated) {
+      spinner.visible = w.floorAnimated;
+      fires.visible = w.floorAnimated;
+      for (const g of garages) g.visible = w.floorAnimated;
+    }
     for (const { group, floor } of w.findFurniture((it) => it.type === 'fireplace' && it.fire)) {
       const flame = group.getObjectByName('fire');
       if (flame) fires.items.push({ floor, material: flame.material, base: flame.material.emissiveIntensity });
@@ -598,7 +633,9 @@ export function createLive(config, { lightOn = () => false } = {}) {
     debug() {
       return {
         doors: doors.map((d) => ({ id: d.id, open: d.goal, lock: d.look ?? null })),
-        garages: garages.map((g) => ({ id: g.id, open: g.goal })),
+        garages: garages.map((g) => ({
+          id: g.id, open: g.goal, now: +g.open.toFixed(3), sections: g.sections.length, windows: g.windows, pose: g.state(),
+        })),
         glows: glows.map((g) => ({ room: g.room, on: g.goal, level: g.level })),
         heat: heats.map((hz) => ({ room: hz.room, on: hz.goal, color: `#${hz.material.color.getHexString()}` })),
         people: people.map((p) => ({ name: p.person.name, room: p.room, floor: p.floor })),

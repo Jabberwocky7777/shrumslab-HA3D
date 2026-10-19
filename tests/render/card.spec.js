@@ -861,7 +861,7 @@ const confirmSheet = (page) => page.locator('house-control-card .hc-confirm');
 const confirmLayer = (page) => page.locator('house-control-card .hc-confirm-layer');
 const toBasement = (page) => page.locator('house-control-card .floors .floor-chip', { hasText: 'Basement' }).click();
 
-test('a floor button with confirmation asks in the card\'s own sheet: Cancel runs nothing, Confirm runs it once', async ({ page }, info) => {
+test('a floor button with confirmation asks in the card\'s own dialog: Cancel runs nothing, Confirm runs it once', async ({ page }, info) => {
   await page.setViewportSize({ width: 430, height: 932 });
   await trapDialogs(page);
   const urls = recordRequests(page);
@@ -873,23 +873,24 @@ test('a floor button with confirmation asks in the card\'s own sheet: Cancel run
   const game = page.locator('house-control-card .scene.floor-action', { hasText: 'Game night' });
 
   await game.click();
-  const sheet = confirmSheet(page);
-  await expect(sheet).toBeVisible();
-  await expect(sheet).not.toHaveClass(/hidden/);
-  await expect(sheet.locator('.sheet-name')).toHaveText('Game night');
-  await expect(sheet.locator('.sheet-sub')).toHaveText('Dim the bar and start game night?');
-  await expect(sheet.locator('.sheet-head .bubble svg')).toHaveCount(1);
-  await expect(sheet.locator('.hc-confirm-actions button')).toHaveText(['Cancel', 'Confirm']);
-  // the card's own sheet slides up to the bottom of the card, with full-width buttons
-  await expect.poll(async () => { const b = await sheet.boundingBox(); return Math.round(b.y + b.height); }).toBe(932);
-  const box = await sheet.boundingBox();
-  expect(Math.round(box.x)).toBe(0);
-  expect(Math.round(box.width)).toBe(430);
-  for (const t of ['Cancel', 'Confirm']) expect((await sheet.locator('button', { hasText: t }).boundingBox()).width).toBeGreaterThan(380);
-  expect(await sheet.locator('.hc-confirm-ok').evaluate((el) => getComputedStyle(el).backgroundImage)).toContain('linear-gradient'); // the power button's blue
-  await page.screenshot({ path: info.outputPath('confirm-sheet.png') });
+  const dialog = confirmSheet(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.sheet-name')).toHaveText('Game night');
+  await expect(dialog.locator('.sheet-sub')).toHaveText('Dim the bar and start game night?');
+  await expect(dialog.locator('.sheet-head .bubble svg')).toHaveCount(1);
+  await expect(dialog.locator('.hc-confirm-actions button')).toHaveText(['Cancel', 'Confirm']);
+  // focus starts on Cancel
+  expect(await page.evaluate(() => window.__test.card.shadowRoot.activeElement?.className)).toBe('hc-confirm-cancel');
+  // the card's look: rounded glass, the power button's blue on Confirm, the two side by side
+  expect(await dialog.evaluate((el) => getComputedStyle(el).borderRadius)).toBe('24px');
+  expect(await dialog.locator('.hc-confirm-ok').evaluate((el) => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
+  const [cancelBox, confirmBox] = [await dialog.locator('.hc-confirm-cancel').boundingBox(), await dialog.locator('.hc-confirm-ok').boundingBox()];
+  expect(Math.abs(cancelBox.y - confirmBox.y)).toBeLessThan(1);
+  expect(confirmBox.x).toBeGreaterThan(cancelBox.x + cancelBox.width - 1);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: info.outputPath('confirm-dialog.png') });
 
-  await sheet.locator('button', { hasText: 'Cancel' }).click();
+  await dialog.locator('button', { hasText: 'Cancel' }).click();
   await expect(confirmLayer(page)).toHaveCount(0);
   await page.waitForTimeout(300);
   expect(await calls(page)).toEqual([]);
@@ -897,7 +898,7 @@ test('a floor button with confirmation asks in the card\'s own sheet: Cancel run
   // the scrim and Esc close it too, without running anything
   await game.click();
   await expect(confirmSheet(page)).toBeVisible();
-  await page.locator('house-control-card .hc-confirm-scrim').click({ position: { x: 20, y: 20 } });
+  await page.mouse.click(12, 12); // on the scrim, outside the dialog
   await expect(confirmLayer(page)).toHaveCount(0);
   await game.click();
   await expect(confirmSheet(page)).toBeVisible();
@@ -918,21 +919,93 @@ test('a floor button with confirmation asks in the card\'s own sheet: Cancel run
   expectSameOrigin(urls, page.url());
 });
 
-test('the confirmation sheet keeps clear of the bottom safe area and follows reduced motion', async ({ page }) => {
+// Where the dialog is, in viewport pixels, and whether its buttons are whole and big enough.
+async function dialogPlacement(page) {
+  const dialog = confirmSheet(page);
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => dialog.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  const box = await dialog.boundingBox();
+  const buttons = await Promise.all(['.hc-confirm-cancel', '.hc-confirm-ok'].map((sel) => dialog.locator(sel).boundingBox()));
+  return { box, buttons, centre: { x: box.x + box.width / 2, y: box.y + box.height / 2 } };
+}
+
+for (const variant of ['card', 'full_bleed', 'scrolled page']) {
+  test(`the confirmation dialog is centred in the visible screen, clear of the safe areas (${variant})`, async ({ page }) => {
+    test.setTimeout(120000);
+    await page.setViewportSize({ width: 430, height: 932 });
+    await open(page, variant === 'full_bleed' ? '?full_bleed=1' : '');
+    await page.evaluate((v) => {
+      const { card } = window.__test;
+      card.style.setProperty('--hc-safe-bottom', '34px'); // the home indicator
+      if (v === 'full_bleed') card.style.setProperty('--hc-safe-top', '47px'); // the status bar
+      if (v === 'scrolled page') {
+        // a dashboard taller than the screen, scrolled down a little
+        document.body.style.height = 'auto';
+        document.body.append(Object.assign(document.createElement('div'), { style: 'height: 1600px' }));
+        window.scrollTo(0, 400);
+      }
+    }, variant);
+    if (variant === 'scrolled page') await page.evaluate(() => window.scrollTo(0, 0)); // the buttons must be on screen to tap
+    await toBasement(page);
+    if (variant === 'scrolled page') await page.evaluate(() => window.scrollTo(0, 400));
+    await resetCalls(page);
+    await page.evaluate(() => window.__test.card.shadowRoot.querySelector('.scene.floor-action[data-action="game"]').click());
+    const { box, buttons, centre } = await dialogPlacement(page);
+    expect(Math.abs(centre.x - 430 / 2)).toBeLessThanOrEqual(40);
+    expect(Math.abs(centre.y - 932 / 2)).toBeLessThanOrEqual(40);
+    expect(box.width).toBeLessThanOrEqual(360);
+    for (const b of buttons) {
+      expect(b.height).toBeGreaterThanOrEqual(48);
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(430);
+      expect(b.y).toBeGreaterThanOrEqual(variant === 'full_bleed' ? 47 : 0);
+      expect(b.y + b.height).toBeLessThanOrEqual(932 - 34); // never under the home indicator
+    }
+    await confirmSheet(page).locator('.hc-confirm-cancel').click();
+    await expect(confirmLayer(page)).toHaveCount(0);
+    expect(await calls(page)).toEqual([]);
+    await page.evaluate(() => window.__test.card.shadowRoot.querySelector('.scene.floor-action[data-action="game"]').click());
+    await dialogPlacement(page);
+    await confirmSheet(page).locator('.hc-confirm-ok').click();
+    await expect.poll(() => calls(page)).toEqual([{ domain: 'script', service: 'turn_on', data: { entity_id: 'script.demo_movie_mode' } }]);
+    await page.waitForTimeout(300);
+    expect(await calls(page)).toHaveLength(1);
+  });
+}
+
+test('the dialog stays in the visible screen inside a transformed ancestor', async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await open(page);
+  // a dashboard wrapper with a transform: position: fixed now follows it, not the screen
+  await page.evaluate(() => { document.getElementById('view').style.transform = 'translateY(120px)'; });
+  await toBasement(page);
+  await page.evaluate(() => window.__test.card.shadowRoot.querySelector('.scene.floor-action[data-action="game"]').click());
+  const layer = await confirmLayer(page).boundingBox();
+  expect([Math.round(layer.x), Math.round(layer.y), Math.round(layer.width), Math.round(layer.height)]).toEqual([0, 0, 430, 932]);
+  const { centre } = await dialogPlacement(page);
+  expect(Math.abs(centre.y - 932 / 2)).toBeLessThanOrEqual(40);
+});
+
+test('the confirmation dialog follows reduced motion and lets the 3D view rest', async ({ page }) => {
+  test.setTimeout(120000);
   await page.setViewportSize({ width: 430, height: 932 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await open(page);
-  await page.evaluate(() => window.__test.card.style.setProperty('--safe-bottom-preview', '34px'));
   await toBasement(page);
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(6));
   await page.locator('house-control-card .scene.floor-action', { hasText: 'Game night' }).click();
-  const sheet = confirmSheet(page);
-  await expect(sheet).toBeVisible();
-  expect(await sheet.evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBe(34 + 16);
-  const confirm = await sheet.locator('.hc-confirm-ok').boundingBox();
-  expect(confirm.y + confirm.height).toBeLessThanOrEqual(932 - 34);
-  // no slide: the sheet is in place at once
-  expect(await sheet.evaluate((el) => getComputedStyle(el).transitionDuration.split(',').every((d) => parseFloat(d) <= 0.001))).toBe(true);
-  await sheet.locator('button', { hasText: 'Cancel' }).click();
+  const dialog = confirmSheet(page);
+  await expect(dialog).toBeVisible();
+  // no animation: in place and opaque at once
+  expect(await dialog.evaluate((el) => [getComputedStyle(el).transform, getComputedStyle(el).opacity])).toEqual(['none', '1']);
+  // nothing in the scene changes: the loop sleeps while it is open, even with the pointer on it
+  await expect.poll(async () => (await page.evaluate(() => window.__test.card._ui.debug.loop)).sleeping, { timeout: 60000 }).toBe(true);
+  const box = await dialog.boundingBox();
+  const before = await page.evaluate(() => window.__test.card._ui.debug.loop.frames);
+  for (let i = 0; i < 5; i++) await page.mouse.move(box.x + 20 + i * 10, box.y + 20);
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => window.__test.card._ui.debug.loop.frames)).toBe(before);
+  await dialog.locator('button', { hasText: 'Cancel' }).click();
   await expect(confirmLayer(page)).toHaveCount(0);
 });
 
@@ -1268,4 +1341,60 @@ test('the fireplace TV glows with its media player and taps open more-info; the 
   const b = await flame();
   await page.waitForTimeout(800);
   expect(await flame()).toBe(b);
+});
+
+/* ---------- the sectional garage door ---------- */
+
+test('the garage door draws its sections and windows, slides up and back with the cover, and a tap opens more-info', async ({ page }, info) => {
+  test.setTimeout(120000);
+  const consoleErrors = [];
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleErrors.push(m.text()); });
+  const urls = recordRequests(page);
+  const errors = await open(page);
+  const garage = async () => (await liveState(page)).garages[0];
+  let g = await garage();
+  expect(g).toMatchObject({ sections: 4, windows: 4, open: 0 });
+  // closed: every section upright, stacked up the opening
+  expect(g.pose.map((p) => p.angle)).toEqual([0, 0, 0, 0]);
+  expect(g.pose.map((p) => p.y)).toEqual([0, 0.5, 1, 1.5]);
+  // the frame, tracks and opener are part of the floor's merged meshes, not meshes of their own
+  const statics = await page.evaluate(() => {
+    let loose = 0;
+    window.__test.card._ui.debug.world.floorGroup('main').traverse((o) => { if (o.userData.garage) o.traverse((c) => { if (c.isMesh) loose++; }); });
+    return loose;
+  });
+  expect(statics).toBe(0);
+  await setLive(page, 'cover.demo_garage_door', 'open', { current_position: 100 });
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(8));
+  g = await garage();
+  expect(g.open).toBe(1);
+  expect(g.now).toBeGreaterThan(0.99);
+  // open: every section lies under the ceiling tracks, at the top of the opening, one behind the other
+  for (const p of g.pose) {
+    expect(Math.abs(Math.abs(p.angle) - Math.PI / 2)).toBeLessThan(0.02);
+    expect(p.y).toBeCloseTo(2.0, 2);
+  }
+  const depths = g.pose.map((p) => Math.abs(p.z));
+  expect(depths).toEqual([...depths].sort((a, b) => a - b));
+  await page.screenshot({ path: info.outputPath('garage-open.png') });
+  // half way: the lower sections still upright, the top ones already turned
+  await setLive(page, 'cover.demo_garage_door', 'opening', { current_position: 40 });
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(8));
+  g = await garage();
+  expect(g.pose[0].angle).toBe(0);
+  expect(Math.abs(g.pose[3].angle)).toBeGreaterThan(1.5);
+  await setLive(page, 'cover.demo_garage_door', 'closed', { current_position: 0 });
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(8));
+  expect((await garage()).pose.map((p) => p.angle)).toEqual([0, 0, 0, 0]);
+  await page.screenshot({ path: info.outputPath('garage-closed.png') });
+  // a tap: Home Assistant's dialog, never a service call
+  await resetCalls(page);
+  await page.evaluate(() => { window.__test.events.length = 0; });
+  await tapLive(page, `${(await garage()).id}:garage`);
+  await expect.poll(() => page.evaluate(() => window.__test.events.filter((e) => e.type === 'hass-more-info').map((e) => e.entityId)))
+    .toEqual(['cover.demo_garage_door']);
+  expect(await calls(page)).toEqual([]);
+  expect(errors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expectSameOrigin(urls, page.url());
 });

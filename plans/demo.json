@@ -39,7 +39,7 @@
     { "id": "rec",     "name": "Rec room", "rect": [0, 8.2, 8.0, 5.0],    "floor": "carpet", "storey": "main",
       "occupancy": "binary_sensor.demo_rec_motion" },
     { "id": "rec_nook", "name": "Rec nook", "rect": [0, 13.2, 3.0, 1.6],  "floor": "carpet", "storey": "main", "part_of": "rec" },
-    { "id": "storage", "name": "Storage",  "rect": [8.0, 8.2, 2.4, 2.0],  "floor": "stone", "storey": "main" },
+    { "id": "storage", "name": "Storage",  "rect": [8.0, 8.2, 3.2, 5.0],  "floor": "stone", "storey": "main" },
 
     { "id": "bar",     "name": "Bar",      "rect": [0, 0, 6.4, 4.4],     "floor": "walnut", "storey": "basement" },
     { "id": "gym",     "name": "Gym",      "rect": [6.4, 0, 4.0, 4.4],   "floor": "stone",  "storey": "basement" },
@@ -62,7 +62,8 @@
     { "type": "door",   "from": [1.4, 8.2],   "to": [2.3, 8.2] },
     { "type": "window", "from": [0, 9.8],     "to": [0, 11.4] },
     { "type": "door",   "from": [8.7, 8.2],   "to": [9.5, 8.2] },
-    { "type": "garage", "from": [8.2, 10.2],  "to": [10.2, 10.2], "head": 2.0, "cover": "cover.demo_garage_door" },
+    { "type": "garage", "from": [8.6, 13.2],  "to": [10.6, 13.2], "head": 2.0, "cover": "cover.demo_garage_door",
+      "sections": 4, "windows": true, "windowCount": 4, "panels": 2, "color": "#e9e4d8", "opener": true },
 
     { "type": "door",   "from": [6.4, 3.2],   "to": [6.4, 4.1], "storey": "basement" },
     { "type": "door",   "from": [10.4, 1.0],  "to": [10.4, 1.9], "storey": "basement" },
@@ -107,7 +108,7 @@
     { "type": "fireplace",    "pos": [0.28, 12.4], "rot": 90, "fire": true, "tv": true, "entity": "media_player.demo_rec_tv" },
     { "type": "treadmill",    "pos": [7.4, 9.4] },
     { "type": "glassCabinet", "pos": [3.6, 13.0],  "rot": 180 },
-    { "type": "bookshelf",    "pos": [10.2, 9.3],  "rot": -90 },
+    { "type": "bookshelf",    "pos": [10.95, 9.3], "rot": -90 },
     { "type": "walkInCloset", "pos": [8.3, 9.2],   "rot": 90 },
     { "type": "daybed",       "pos": [1.5, 14.25], "rot": 180, "trundle": true },
 

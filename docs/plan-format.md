@@ -85,11 +85,13 @@ and exactly one of:
   give it an `active_when` of its own to change that. Its icon defaults to a switch.
 
 Any button may also have `confirmation`: `true`, or `{ "text": "Start game night?" }`. Tapping it
-then opens a sheet at the bottom of the card with the button's icon and name and the text
-(default "Run <name>?"), and **Cancel** and **Confirm** buttons. The button runs only after
-Confirm; Cancel, a tap outside the sheet or Esc closes it and nothing happens. The sheet is the
-card's own (it follows the theme, the phone's bottom safe area and reduced motion), never a browser
-or Home Assistant dialog.
+then opens a small dialog in the middle of the screen, in the card's look: the button's icon and
+name, the text (default "Run <name>?"), and **Cancel** and **Confirm** side by side. The button
+runs only after Confirm; Cancel, a tap outside the dialog or Esc closes it and nothing happens. It
+is centred in the part of the screen you can see, whatever the card's height, `full_bleed` or how
+far the dashboard is scrolled, and stays clear of the notch and the home indicator. It follows the
+theme and reduced motion, never uses a browser or Home Assistant dialog, and the 3D view keeps
+resting while it is open.
 
 ```json
 "actions": [
@@ -334,6 +336,7 @@ a small glowing icon in the 3D view and a tile under its room.
 | `double_tap_action` | none | A double tap. Without one a single tap acts at once; with one it waits a moment for the second tap |
 | `tap`, `hold`, `path` | | The older short form, still accepted: `"tap": "more-info"`, `"toggle"` or `"navigate"` with `"path": "/lovelace/climate"`. A `tap_action` wins over `tap` |
 | `show` | | `temperature`: show `current_temperature` on the icon (climate entities) |
+| `fan` | the entity, for a `fan.*` | A `fan.*` entity's icon spins while the fan runs. `fan` names another `fan.*` to spin with, or `false` keeps the icon still. The blades of `fan` lights are not affected |
 
 ### Actions
 
@@ -383,10 +386,31 @@ going on. A plan without them looks exactly as before.
 | --- | --- | --- |
 | `contact` | doors, windows | A `binary_sensor.*`. While it is `on` (open) a door's leaf swings open and turns the alert colour; a window turns the alert colour |
 | `lock` | doors, garage doors | A `lock.*`, drawn as a lock on the door: green when locked, the alert colour when unlocked, jammed or open |
-| `type: "garage"` with `cover` | | A garage door that rolls up and down with the `cover.*` (its `current_position`, else open / closed) |
+| `type: "garage"` with `cover` | | A sectional garage door that opens and closes with the `cover.*` (its `current_position`, else open / closed): its sections ride up the opening and back along two ceiling tracks, one after another, and it turns the alert colour while open |
 
 Tapping a lock or a garage door always opens Home Assistant's more-info dialog: they are sensitive
 devices.
+
+A garage door's look is set on its opening (all optional, defaults in brackets):
+
+| Field | Meaning |
+| --- | --- |
+| `sections` | (4) horizontal sections, with a recessed groove between them |
+| `windows` | (`true`) a row of small windows in the top section |
+| `windowCount` | (about one per 0.6 m) how many windows |
+| `panels` | (about one per 0.9 m) raised rectangles across each section |
+| `color` | (`#e9e4d8`, warm white) the door and its trim |
+| `opener` | (`true`) the opener on the ceiling, with its rail |
+
+The door gets a trim frame on the garage side, and two dark tracks run about 2.5 m into the garage
+from the top corners (less in a shallow one). The garage is the room the opening belongs to; on an
+opening between two rooms, the deeper one. Like the fans, the door only moves on the floor you look
+at; on another floor it is simply where it should be.
+
+```json
+{ "type": "garage", "from": [8.6, 13.2], "to": [10.6, 13.2], "head": 2.0, "cover": "cover.your_garage_door",
+  "sections": 4, "windowCount": 4, "panels": 2, "color": "#e9e4d8" }
+```
 
 ### Rooms: occupancy and temperature
 

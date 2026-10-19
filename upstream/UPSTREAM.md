@@ -32,7 +32,7 @@ shows the full patch.
 | `three/lights.js` | A fixture's glow meshes are merged into one, its body into as few meshes as its materials allow, a fan's blades into one (`mergeChildren`). |
 | `three/kit.js` | `box()` and `cyl()` share one geometry per size. |
 | `three/furniture.js` (options) | `kitchen`: `sink`, `cooktop`, `front`, `top`. `island`: `base`, `top`, `cooktop` (a gas hob), `drawers`. `coffeeTable`: `round` (uses `roundTable` from `extras.js`). Their footprints follow. |
-| `three/house.js` | `garage` openings are gaps like doors; `src/ha/live.js` draws the door. No wall between the rectangles of one room (`partOf`); `wallSegments` is exported for the unit tests. |
+| `three/house.js` | `garage` openings are gaps like doors; `src/ha/live.js` draws the door, and the house adds its trim, ceiling tracks and opener (`src/ha/garage.js`) so they are merged with the floor. No wall between the rectangles of one room (`partOf`); `wallSegments` is exported for the unit tests. |
 | `three/furniture.js` | Every piece keeps its plan item in `userData.item`; the TV's screen mesh is named `screen`. |
 | `three/extras.js` (live) | The fan's blades are one group named `fan-blades` (they spin); the media wall's screen is named `screen`. |
 | `three/world.js` (motion) | `prefers-reduced-motion`: no intro fly-in, no pulses, the camera and floors jump to where they go. |

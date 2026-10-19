@@ -3,6 +3,7 @@
 // TVs that are on and power readings. Checked here and copied onto the normalised config.
 import { ConfigError } from '../../upstream/config.js';
 import { domainOf } from './sensitive.js';
+import { garageOptions, GARAGE_DEFAULTS } from './garage.js';
 
 const ENTITY_ID = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -35,6 +36,9 @@ export function applyLiveFields(raw, config, { exists = () => {} } = {}) {
     need(o.type !== 'garage' || o.cover, `${what} needs "cover": the cover.* entity of the garage door`);
     need(o.type === 'garage' || !o.cover, `${what}: "cover" is only for "type": "garage"`);
     need(!o.lock || o.type === 'door' || o.type === 'garage', `${what}: "lock" is only for doors`);
+    // a garage door's look: sections, windows, panels, colour, opener
+    if (o.type === 'garage') o.garage = garageOptions(what, r);
+    else for (const k of Object.keys(GARAGE_DEFAULTS)) need(r[k] == null, `${what}: "${k}" is only for "type": "garage"`);
   });
 
   // Rooms: occupancy sensors and a temperature.

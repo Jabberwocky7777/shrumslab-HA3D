@@ -1,6 +1,7 @@
 // Turns the rooms + openings of a plan into floors, walls and windows.
 import * as THREE from 'three';
 import { box, mat, at, floorMesh } from './kit.js';
+import { garageStatic } from '../../src/ha/garage.js'; // ha3d: a garage door's frame, tracks and opener
 
 const EXT_T = 0.2;   // exterior wall thickness
 const INT_T = 0.1;   // interior wall thickness
@@ -146,6 +147,10 @@ export function buildHouse(config, camDir) {
     // real, full-height wall: an invisible shadow caster fills in the missing part.
     if (!exterior && Hi < H) piece(s, a, b, Hi, H, 0.04, blocker).receiveShadow = false;
   }
+
+  // ha3d: a garage door's trim, ceiling tracks and opener never move: built with the house, they
+  // are merged with the floor's other static meshes (the door itself is src/ha/live.js's)
+  for (const o of config.openings) if (o.type === 'garage') group.add(garageStatic(o, config.rooms, H));
 
   return { group, floors };
 }

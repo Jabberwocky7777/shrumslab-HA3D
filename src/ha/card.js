@@ -307,7 +307,7 @@ function buildUi(card, plan, firstHass) {
       run() {
         if (!a.confirmation) { perform(a); return; }
         // the card's own sheet: never window.confirm or Home Assistant's dialog
-        openConfirmSheet(panel.anchorMenu, { name: a.name, iconName: a.icon, text: confirmationText(a), onConfirm: () => perform(a) });
+        openConfirmSheet(panel.card, { name: a.name, iconName: a.icon, text: confirmationText(a), onConfirm: () => perform(a) });
       },
     }));
   }
@@ -412,8 +412,10 @@ function buildUi(card, plan, firstHass) {
   }, opts);
   root.addEventListener('pointercancel', () => { edge = null; }, opts);
   // Any touch, pointer or wheel input wakes the fans after a rest and runs the loop at full rate.
+  // Input on the confirmation dialog changes nothing in the 3D view: the loop may keep resting.
+  const onDialog = (ev) => ev.composedPath().some((el) => el.classList?.contains('hc-confirm-layer'));
   for (const type of ['pointerdown', 'pointermove', 'touchstart', 'wheel']) {
-    root.addEventListener(type, () => world.interact(), { ...opts, passive: true });
+    root.addEventListener(type, (ev) => { if (!onDialog(ev)) world.interact(); }, { ...opts, passive: true });
   }
   // A fan that starts, stops or changes speed is worth spinning again, rest or not.
   const unwatchSpin = store.on(() => { if (live.spinChanged()) world.interact(); });

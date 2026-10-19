@@ -22,8 +22,8 @@ Assistant phone app.
 - 🎬 **Scenes**: house-control's light scenes, or buttons that run a Home Assistant script or scene.
 - ✏️ **Visual editor** for admins, saved straight into the dashboard. Import and export as a file.
   The card's options have Home Assistant's own editor too, with an **Edit home…** button.
-- 🚪 **The house as it is**: doors swing open with their sensors, locks show on doors, garage doors
-  roll, occupied rooms glow, people stand in their room, a heat map, spinning fans, TVs that light up
+- 🚪 **The house as it is**: doors swing open with their sensors, locks show on doors, sectional
+  garage doors slide up along their tracks, occupied rooms glow, people stand in their room, a heat map, spinning fans, TVs that light up
   with what's playing, power readings and daylight from the sun.
 - 🏗️ **Start from Home Assistant**: the editor can build a plan (or fill in the current one) from
   your floors, areas, lights and devices; you only drag the rooms into place.
@@ -162,10 +162,11 @@ The plan format is house-control's, with Home Assistant links and a new `entitie
   `hold_action` and `double_tap_action` (the older `tap: more-info | toggle | navigate` still works).
 - `scenes` set lights, or `run` a `script.*` or `scene.*`, lit up while their `active_when` matches.
 - Floor buttons `run` a script or scene, switch the floor's lights (`builtin`) or `toggle` an
-  `input_boolean.*`, and take `confirmation: true` (or `{ "text": ... }`) to ask first in the
-  card's own sheet.
-- Optional sensors make the model show what is going on: `contact` and `lock` on doors, `garage`
-  doors with a `cover`, `occupancy` and `temperature` on rooms, `people`, `spin` and `power` on lights,
+  `input_boolean.*`, and take `confirmation: true` (or `{ "text": ... }`) to ask first in a
+  small dialog of the card's own, centred on the screen.
+- Optional sensors make the model show what is going on: `contact` and `lock` on doors, sectional
+  `garage` doors with a `cover` (and `sections`, `windows`, `windowCount`, `panels`, `color`,
+  `opener` for their look), `occupancy` and `temperature` on rooms, `people`, `spin` and `power` on lights,
   and an `entity` on a TV. See [what the house is doing](https://github.com/Jabberwocky7777/shrumslab-HA3D/blob/main/docs/plan-format.md#what-the-house-is-doing-new-in-this-card).
 
 ### Editing
