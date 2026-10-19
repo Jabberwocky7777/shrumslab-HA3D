@@ -44,7 +44,7 @@ const twoFloors = (patch = {}) => ({
 test('the demo has a main floor and a basement', () => {
   const { config } = validatePlan(demo);
   assert.deepEqual(config.floors.map((f) => f.id), ['basement', 'main']);
-  assert.equal(config.furniture.filter((f) => f.storey === 'basement').length, 8);
+  assert.equal(config.furniture.filter((f) => f.storey === 'basement').length, 9);
 });
 
 test('a plan without floors has one implicit floor and is unchanged otherwise', () => {

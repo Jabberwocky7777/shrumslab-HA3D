@@ -2,7 +2,7 @@
 // centred on its footprint and facing +z; the plan's "rot" turns it from there.
 import * as THREE from 'three';
 import { box, cyl, mat, at, rng } from './kit.js';
-import { extraBuilders, extraFootprints } from './extras.js'; // ha3d: extra furniture
+import { extraBuilders, extraFootprints, roundTable } from './extras.js'; // ha3d: extra furniture
 
 const WOOD = '#a98459';
 const DARK_WOOD = '#5a4334';
@@ -63,6 +63,43 @@ function doorLines(width, height, y, z, count, material) {
   return out;
 }
 
+// ha3d: drawer and door lines on a cabinet block (width x depth, centred at z): on its -z face and both ends.
+function cabinetLines(width, depth, z, material) {
+  const out = [];
+  const back = z - depth / 2 - 0.003;
+  const n = Math.max(2, Math.round(width / 0.6));
+  for (let i = 1; i < n; i++) out.push(at(box(0.008, 0.78, 0.006, material, { r: 0 }), -width / 2 + (width / n) * i, 0.05, back));
+  out.push(at(box(width - 0.04, 0.006, 0.006, material, { r: 0 }), 0, 0.68, back)); // drawers above the doors
+  for (const sx of [-1, 1]) {
+    const x = sx * (width / 2 + 0.003);
+    out.push(at(box(0.006, 0.006, depth - 0.04, material, { r: 0 }), x, 0.68, z));
+    out.push(at(box(0.006, 0.78, 0.008, material, { r: 0 }), x, 0.05, z));
+  }
+  return out;
+}
+
+// ha3d: a gas hob centred at (x, y, z): a steel plate, five burners and cast-iron grates.
+function gasHob(x, y, z, width = 0.75) {
+  const d = 0.52;
+  const steel = mat('#b9bdc2', { rough: 0.3, metal: 0.8 });
+  const iron = mat('#17181b', { rough: 0.6, metal: 0.3 });
+  const out = [at(box(width, 0.012, d, steel, { r: 0.004 }), x, y, z)];
+  const burners = [[-0.3, -0.27], [0.3, -0.27], [-0.3, 0.27], [0.3, 0.27], [0, 0]];
+  for (const [bx, bz] of burners) {
+    const big = bx === 0 && bz === 0;
+    out.push(at(cyl(big ? 0.06 : 0.045, big ? 0.065 : 0.05, 0.02, iron, 20), x + bx * width, y + 0.012, z + bz * d));
+    out.push(at(cyl(big ? 0.035 : 0.025, big ? 0.035 : 0.025, 0.012, mat('#3a3b40', { rough: 0.5 }), 16), x + bx * width, y + 0.032, z + bz * d));
+  }
+  // two grates, each a frame of bars across its half
+  for (const sx of [-1, 1]) {
+    const cx = x + sx * width / 4;
+    const gw = width / 2 - 0.02;
+    for (const sz of [-1, 0, 1]) out.push(at(box(gw, 0.015, 0.015, iron, { r: 0 }), cx, y + 0.05, z + sz * (d / 2 - 0.02)));
+    for (const s of [-1, 0, 1]) out.push(at(box(0.015, 0.015, d - 0.02, iron, { r: 0 }), cx + s * (gw / 2 - 0.01), y + 0.05, z));
+  }
+  return group(out);
+}
+
 const builders = {
   rug({ size = [2, 1.4], color = '#3b4a66' }) {
     const g = group(
@@ -86,8 +123,14 @@ const builders = {
     return seating(0.92, 0.88, color, 1);
   },
 
-  coffeeTable({ width = 1.1 }) {
+  coffeeTable({ width = 1.1, round = false, diameter, legs: legStyle = 'pedestal' }) {
     const wood = mat(WOOD, { rough: 0.6 });
+    // ha3d: "round": a round top (diameter from width) on a pedestal or four legs
+    if (round) {
+      const t = roundTable({ diameter: diameter ?? width * 0.8, height: 0.4, top: wood, base: mat(BLACK, { rough: 0.5 }), legs: legStyle });
+      t.add(at(cyl(0.05, 0.04, 0.09, mat(WHITE, { rough: 0.4 })), 0.1, 0.4, -0.05));
+      return t;
+    }
     return group(
       at(box(width, 0.04, 0.58, wood, { r: 0.015 }), 0, 0.36, 0),
       at(box(width - 0.16, 0.02, 0.44, mat(BLACK, { rough: 0.5 }), { r: 0.008 }), 0, 0.14, 0),
@@ -144,11 +187,14 @@ const builders = {
     return g;
   },
 
-  island({ width = 2.0, stools = 3 }) {
+  // ha3d: base / top colours, a gas cooktop, drawer and door lines (on the working side, -z, and the ends)
+  island({ width = 2.0, stools = 3, base = '#39424f', top = '#e9e7e2', cooktop = false, drawers = true }) {
     const g = group(
-      at(box(width - 0.12, 0.88, 0.62, mat('#39424f', { rough: 0.7 }), { r: 0.015 }), 0, 0, -0.04),
-      at(box(width, 0.05, 0.86, mat('#e9e7e2', { rough: 0.3 }), { r: 0.015 }), 0, 0.88, 0),
+      at(box(width - 0.12, 0.88, 0.62, mat(base, { rough: 0.7 }), { r: 0.015 }), 0, 0, -0.04),
+      at(box(width, 0.05, 0.86, mat(top, { rough: 0.3 }), { r: 0.015 }), 0, 0.88, 0),
     );
+    if (drawers) g.add(...cabinetLines(width - 0.12, 0.62, -0.04, mat(darker(base, 0.65), { rough: 0.6 })));
+    if (cooktop) g.add(gasHob(0, 0.93, -0.04, Math.min(0.9, width * 0.4)));
     for (let i = 0; i < stools; i++) {
       const x = -width / 2 + (width / stools) * (i + 0.5);
       g.add(group(
@@ -160,24 +206,32 @@ const builders = {
     return g;
   },
 
-  kitchen({ width = 3, upper = true }) {
-    const front = mat('#e4e1da', { rough: 0.6 });
-    const seam = mat('#b9b6ae');
+  // ha3d: "sink" and "cooktop" (true) can be left out, so several runs make one kitchen; door and counter colours
+  kitchen({ width = 3, upper = true, sink = true, cooktop = true, front: frontColor = '#e4e1da', top = '#33363d' }) {
+    const front = mat(frontColor, { rough: 0.6 });
+    const seam = mat(darker(frontColor, 0.8));
     const n = Math.max(2, Math.round(width / 0.6));
+    // with one of the two, it sits in the middle of the run
+    const hobX = sink ? -width / 4 : 0;
+    const sinkX = cooktop ? width / 4 : 0;
     const g = group(
       at(box(width, 0.86, 0.6, front, { r: 0.008 }), 0, 0, 0),
       ...doorLines(width, 0.78, 0.06, 0.3, n, seam),
-      at(box(width + 0.02, 0.04, 0.63, mat('#33363d', { rough: 0.35 }), { r: 0.008 }), 0, 0.86, 0.005),
-      at(box(0.58, 0.012, 0.5, mat('#0c0d10', { rough: 0.15 }), { r: 0 }), -width / 4, 0.9, 0),
-      at(box(0.5, 0.012, 0.38, mat(METAL, { rough: 0.3, metal: 0.9 }), { r: 0 }), width / 4, 0.9, 0.02),
-      at(cyl(0.015, 0.015, 0.24, mat(METAL, { rough: 0.25, metal: 0.9 }), 10), width / 4, 0.9, -0.22),
+      at(box(width + 0.02, 0.04, 0.63, mat(top, { rough: 0.35 }), { r: 0.008 }), 0, 0.86, 0.005),
     );
+    if (cooktop) g.add(at(box(0.58, 0.012, 0.5, mat('#0c0d10', { rough: 0.15 }), { r: 0 }), hobX, 0.9, 0));
+    if (sink) {
+      g.add(
+        at(box(0.5, 0.012, 0.38, mat(METAL, { rough: 0.3, metal: 0.9 }), { r: 0 }), sinkX, 0.9, 0.02),
+        at(cyl(0.015, 0.015, 0.24, mat(METAL, { rough: 0.25, metal: 0.9 }), 10), sinkX, 0.9, -0.22),
+      );
+    }
     if (upper) {
       g.add(
         at(box(width, 0.72, 0.35, front, { r: 0.008 }), 0, 1.48, -0.125),
         ...doorLines(width, 0.66, 1.51, 0.05, n, seam),
-        at(box(0.7, 0.1, 0.42, mat('#2f3239', { rough: 0.4, metal: 0.4 }), { r: 0.008 }), -width / 4, 1.42, -0.09),
       );
+      if (cooktop) g.add(at(box(0.7, 0.1, 0.42, mat('#2f3239', { rough: 0.4, metal: 0.4 }), { r: 0.008 }), hobX, 1.42, -0.09)); // the hood
     }
     return g;
   },
@@ -333,7 +387,7 @@ export function footprint(item) {
     case 'rug': return item.size || [2, 1.4];
     case 'sofa': return [w || 2.2, 0.95];
     case 'armchair': return [0.92, 0.88];
-    case 'coffeeTable': return [w || 1.1, 0.58];
+    case 'coffeeTable': return item.round ? [item.diameter || (w || 1.1) * 0.8, item.diameter || (w || 1.1) * 0.8] : [w || 1.1, 0.58]; // ha3d: round
     case 'tv': return [w || 1.7, 0.4];
     case 'sideboard': return [w || 1.6, 0.42];
     case 'diningSet': return [w || 1.8, 1.9];

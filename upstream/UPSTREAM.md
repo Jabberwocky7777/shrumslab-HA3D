@@ -31,6 +31,7 @@ shows the full patch.
 | `three/world.js` (render loop) | Live units with `ambient: true` (spinning fans) are drawn at `animationFps` at most while nothing else moves, rest after `idlePause` seconds without `interact()`, and `busy()` lifts the cap. `floorAnimated(id)`, `interact()`, `loopStats()` and `renderInfo()` (renderer.info, reset once per frame so every pass counts). Each floor's static meshes are merged (`src/ha/static-merge.js`); light fixture and AC groups have frozen matrices. |
 | `three/lights.js` | A fixture's glow meshes are merged into one, its body into as few meshes as its materials allow, a fan's blades into one (`mergeChildren`). |
 | `three/kit.js` | `box()` and `cyl()` share one geometry per size. |
+| `three/furniture.js` (options) | `kitchen`: `sink`, `cooktop`, `front`, `top`. `island`: `base`, `top`, `cooktop` (a gas hob), `drawers`. `coffeeTable`: `round` (uses `roundTable` from `extras.js`). Their footprints follow. |
 | `three/house.js` | `garage` openings are gaps like doors; `src/ha/live.js` draws the door. No wall between the rectangles of one room (`partOf`); `wallSegments` is exported for the unit tests. |
 | `three/furniture.js` | Every piece keeps its plan item in `userData.item`; the TV's screen mesh is named `screen`. |
 | `three/extras.js` (live) | The fan's blades are one group named `fan-blades` (they spin); the media wall's screen is named `screen`. |
@@ -56,7 +57,8 @@ keep the `ha3d:` changes, update the commit above, and run `npm run check`.
 real-world plans: `poolTable`, `sectional`, `glassCabinet`, `mediaWall`, `barCart`, `treadmill`,
 `popcornMachine`, `pokerTable`, `wetBar`, `darkBookcase`, `deskSetup`, `catTree`, `litterRobot`,
 `pedestalSink`, `tubShower`, `tubOnly`, `stairs`, `endTable`, `dehumidifier`, `airPurifier`,
-`washerDryer`, `showerStall`, `daybed`, `walkInCloset`, and light types `fan`, `pendantBar`, `sconce`, `cans` (multi-point: `"points": [[x, z], ...]`),
+`washerDryer`, `showerStall`, `daybed`, `walkInCloset`, `wallOven`, `fireplace`, `shelving` (and
+`round` end tables), and light types `fan`, `pendantBar`, `sconce`, `cans` (multi-point: `"points": [[x, z], ...]`),
 and `dome`. Hooks into upstream are one line each, marked `// ha3d`, in `three/furniture.js`,
 `three/lights.js`, `three/kit.js` (carpet floor), `config.js` (light types, floor kinds),
 `editor/editor.js` (carpet fill) and `ui/icons.js`.

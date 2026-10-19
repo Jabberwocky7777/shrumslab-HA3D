@@ -557,13 +557,157 @@ export const extraBuilders = {
     return g;
   },
 
-  /** Simple low table (lamp table, end table). */
-  endTable({ width = 0.5, depth = 0.45, height = 0.6, color = '#2a211b' }) {
+  /** Simple low table (lamp table, end table). "round": a round top on a pedestal (or "legs": 4). */
+  endTable({ width = 0.5, depth = 0.45, height = 0.6, color = '#2a211b', round = false, diameter, legs = 'pedestal' }) {
     const m = mat(color, { rough: 0.6 });
+    if (round) return roundTable({ diameter: diameter ?? width, height, top: m, base: m, legs }); // ha3d
     return group(at(box(width, 0.04, depth, m, { r: 0.01 }), 0, height - 0.04, 0), ...legs4(width, depth, height - 0.04, m, 0.03, 0.018),
       at(box(width - 0.06, 0.02, depth - 0.06, m, { r: 0 }), 0, 0.15, 0));
   },
+
+  /** Full-height cabinet tower with built-in appliances: "stack" is "microwave+oven", "double-oven" or "oven". */
+  wallOven({ width = 0.76, depth = 0.65, height = 2.25, cabinet = '#ece9e2', stack = 'microwave+oven' }) {
+    const body = mat(cabinet, { rough: 0.6 });
+    const seam = mat(darker(cabinet, 0.78), { rough: 0.6 });
+    const steel = mat('#c4c8cd', { rough: 0.28, metal: 0.85 });
+    const dark = mat('#14161a', { rough: 0.35 });
+    const pane = glass('#20262e', 0.85);
+    const front = depth / 2;
+    const g = group(
+      at(box(width, 0.1, depth - 0.06, mat('#2a2b2f', { rough: 0.8 }), { r: 0 }), 0, 0, -0.03), // plinth
+      at(box(width, height - 0.1, depth, body, { r: 0.01 }), 0, 0.1, 0),
+    );
+    // A door or drawer front, proud of the tower, from y0 to y1, with a seam around it.
+    const panel = (y0, y1, material = body) => g.add(
+      at(box(width - 0.03, y1 - y0 - 0.008, 0.02, material, { r: 0.004 }), 0, y0 + 0.004, front),
+      at(box(width - 0.02, 0.006, 0.012, seam, { r: 0 }), 0, y1 - 0.003, front + 0.004),
+    );
+    const handle = (y, w = width * 0.62) => {
+      const bar = at(cyl(0.011, 0.011, w, steel, 10), -w / 2, y, front + 0.045);
+      bar.rotation.z = -Math.PI / 2;
+      g.add(bar, at(box(0.02, 0.02, 0.035, steel, { r: 0.005 }), -w / 2 + 0.03, y - 0.01, front + 0.02),
+        at(box(0.02, 0.02, 0.035, steel, { r: 0.005 }), w / 2 - 0.03, y - 0.01, front + 0.02));
+    };
+    // An appliance from y0 to y1: steel front, a dark control strip on top, a glass window, a handle.
+    const appliance = (y0, y1, kind) => {
+      panel(y0, y1, steel);
+      const h = y1 - y0;
+      g.add(at(box(width - 0.06, 0.07, 0.006, dark, { r: 0.002 }), 0, y1 - 0.09, front + 0.022));
+      for (let i = 0; i < 3; i++) g.add(at(cyl(0.012, 0.012, 0.006, steel, 12), width * (0.12 + i * 0.1), y1 - 0.055, front + 0.026).rotateX(Math.PI / 2));
+      const winH = kind === 'microwave' ? h - 0.17 : h * 0.45;
+      const winY = kind === 'microwave' ? y0 + 0.04 : y0 + h * 0.18;
+      g.add(at(box(kind === 'microwave' ? width * 0.62 : width * 0.72, winH, 0.006, pane, { r: 0.004 }), kind === 'microwave' ? -width * 0.1 : 0, winY, front + 0.022));
+      if (kind === 'microwave') {
+        g.add(at(box(0.02, winH, 0.03, steel, { r: 0.006 }), width * 0.33, winY, front + 0.035));
+      } else handle(y1 - 0.14);
+    };
+    const plan = {
+      'microwave+oven': [['cabinet', 0.65], ['oven', 0.62], ['microwave', 0.42]],
+      'double-oven': [['cabinet', 0.4], ['oven', 0.62], ['oven', 0.62]],
+      oven: [['cabinet', 0.75], ['oven', 0.62]],
+    }[stack] || [['cabinet', 0.65], ['oven', 0.62], ['microwave', 0.42]];
+    let y = 0.1;
+    for (const [kind, h] of plan) {
+      if (kind === 'cabinet') { panel(y, y + h); handle(y + h - 0.06, width * 0.4); } else appliance(y, y + h, kind);
+      y += h;
+    }
+    // cabinet doors above the appliances, up to the top
+    if (height - y > 0.15) {
+      panel(y, height - 0.02);
+      g.add(at(box(0.008, height - y - 0.06, 0.006, seam, { r: 0 }), 0, y + 0.02, front + 0.012));
+      for (const sx of [-1, 1]) g.add(at(box(0.016, 0.12, 0.02, steel, { r: 0.004 }), sx * 0.04, y + 0.05, front + 0.02));
+    }
+    return g;
+  },
+
+  /** Mantel and surround against the wall, a dark firebox; "fire" glows softly; "tv" hangs a TV above. */
+  fireplace(item) {
+    const { width = 1.6, height = 1.3, depth = 0.35, color = '#f3f1ec', fire = false, tv = false } = item;
+    const stone = mat(color, { rough: 0.7 });
+    const trim = mat(darker(color, 0.9), { rough: 0.6 });
+    const dark = mat('#0d0d0f', { rough: 0.95 });
+    const back = -depth / 2;
+    const openW = Math.min(width * 0.55, width - 0.4);
+    const openH = Math.min(height * 0.58, height - 0.3);
+    const side = (width - openW) / 2;
+    const g = group(
+      at(box(width + 0.2, 0.05, depth + 0.3, mat('#3b3d42', { rough: 0.6 }), { r: 0.01 }), 0, 0, 0.12), // hearth
+      at(box(side, height - 0.08, depth, stone, { r: 0.01 }), -(openW + side) / 2, 0.05, 0), // pilasters
+      at(box(side, height - 0.08, depth, stone, { r: 0.01 }), (openW + side) / 2, 0.05, 0),
+      at(box(openW, height - 0.08 - openH - 0.05, depth, stone, { r: 0.01 }), 0, openH + 0.05, 0), // header
+      at(box(width + 0.12, 0.06, depth + 0.08, trim, { r: 0.012 }), 0, height - 0.03, 0.03), // mantel shelf
+      at(box(openW, openH, 0.04, dark, { r: 0 }), 0, 0.05, back + 0.04), // firebox back
+      at(box(openW, 0.02, depth - 0.04, dark, { r: 0 }), 0, 0.05, 0),
+    );
+    for (const sx of [-1, 1]) g.add(at(box(0.03, openH, depth - 0.05, dark, { r: 0 }), sx * (openW / 2 - 0.015), 0.05, -0.02));
+    const log = mat('#4a3426', { rough: 0.9 });
+    for (const [x, rz] of [[-0.08, 0.15], [0.09, -0.12]]) {
+      const l = at(cyl(0.045, 0.045, openW * 0.6, log, 10), x - openW * 0.3, 0.12, -0.02);
+      l.rotation.z = -Math.PI / 2 + rz;
+      g.add(l);
+    }
+    if (fire) {
+      // ha3d: src/ha/live.js flickers it (an ambient animation: capped rate, rests when idle)
+      const flame = new THREE.MeshStandardMaterial({ color: '#2a1406', emissive: '#ff7a2a', emissiveIntensity: 1.6, roughness: 1 });
+      const glow = at(box(openW - 0.1, openH * 0.55, 0.02, flame, { r: 0 }), 0, 0.08, back + 0.07);
+      glow.name = 'fire';
+      glow.userData.dynamic = true;
+      g.add(glow);
+    }
+    if (tv) {
+      const s = fireplaceScreen(item);
+      const scr = new THREE.MeshStandardMaterial({ color: '#05070c', roughness: 0.2, emissive: '#27407a', emissiveIntensity: 0.3 });
+      g.add(
+        at(box(s.width + 0.04, s.height + 0.04, 0.03, mat(BLACK, { rough: 0.35 }), { r: 0.006 }), 0, s.y - s.height / 2 - 0.02, back + 0.015),
+        Object.assign(at(box(s.width, s.height, 0.008, scr, { r: 0 }), 0, s.y - s.height / 2, s.z), { name: 'screen' }), // ha3d: lit by a media player
+      );
+    }
+    return g;
+  },
+
+  /** Freestanding black metal shelving unit. */
+  shelving({ width = 1.2, depth = 0.45, height = 1.8, shelves = 4, color = '#222222' }) {
+    const metal = mat(color, { rough: 0.45, metal: 0.6 });
+    const g = group();
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(at(box(0.03, height, 0.03, metal, { r: 0.004 }), sx * (width / 2 - 0.015), 0, sz * (depth / 2 - 0.015)));
+    const n = Math.max(2, Math.round(shelves));
+    for (let i = 0; i < n; i++) {
+      const y = 0.08 + ((height - 0.12) * i) / (n - 1);
+      g.add(at(box(width, 0.025, depth, metal, { r: 0.004 }), 0, y, 0));
+      g.add(at(box(width, 0.035, 0.012, metal, { r: 0 }), 0, y - 0.01, depth / 2 - 0.006)); // the shelf's front lip
+    }
+    // cross-bracing at the back
+    const len = Math.hypot(width - 0.06, height * 0.5);
+    for (const sy of [0.25, 0.75]) {
+      const brace = at(box(len, 0.012, 0.006, metal, { r: 0 }), 0, height * sy - 0.006, -depth / 2 + 0.01);
+      brace.rotation.z = Math.atan2(height * 0.5, width - 0.06) * (sy < 0.5 ? 1 : -1);
+      brace.position.y = height * sy;
+      g.add(brace);
+    }
+    return g;
+  },
 };
+
+/** Where a fireplace's TV screen hangs: centred above the mantel, against the wall (also used by src/ha/live.js). */
+export function fireplaceScreen({ height = 1.3, depth = 0.35, screen = 1.3 } = {}) {
+  const h = screen * 0.5625;
+  return { width: screen, height: h, y: height + 0.25 + h, z: -depth / 2 + 0.034 };
+}
+
+/** A round table: a top on a pedestal, or on four legs ("legs": 4). */
+export function roundTable({ diameter, height, top, base, legs = 'pedestal' }) {
+  const r = diameter / 2;
+  const g = group(at(cyl(r, r, 0.035, top, 40), 0, height - 0.035, 0));
+  if (legs === 4 || legs === '4') {
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + (i * Math.PI) / 2;
+      g.add(at(cyl(0.017, 0.013, height - 0.035, base, 10), Math.cos(a) * r * 0.62, 0, Math.sin(a) * r * 0.62));
+    }
+  } else {
+    g.add(at(cyl(r * 0.5, r * 0.55, 0.03, base, 32), 0, 0, 0), at(cyl(0.035, 0.045, height - 0.06, base, 14), 0, 0.03, 0));
+  }
+  return g;
+}
 
 export const extraFootprints = {
   poolTable: (i) => [i.width || 2.5, i.depth || 1.4],
@@ -583,7 +727,10 @@ export const extraFootprints = {
   tubShower: (i) => [i.length || 1.55, 0.78],
   tubOnly: (i) => [i.length || 1.55, 0.78],
   stairs: (i) => [i.width || 1.0, i.length || 3.5],
-  endTable: (i) => [i.width || 0.5, i.depth || 0.45],
+  endTable: (i) => (i.round ? [i.diameter || i.width || 0.5, i.diameter || i.width || 0.5] : [i.width || 0.5, i.depth || 0.45]),
+  wallOven: (i) => [i.width || 0.76, i.depth || 0.65],
+  fireplace: (i) => [Math.max((i.width || 1.6) + 0.2, i.tv ? (i.screen || 1.3) + 0.04 : 0), (i.depth || 0.35) + 0.3],
+  shelving: (i) => [i.width || 1.2, i.depth || 0.45],
   washerDryer: (i) => [i.width || (i.stacked ? 0.7 : 1.4), i.depth || 0.7],
   showerStall: (i) => [i.width || 1.0, i.depth || 1.0],
   daybed: (i) => [i.width || 2.0, i.depth || 1.0],

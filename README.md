@@ -141,7 +141,9 @@ The plan format is house-control's, with Home Assistant links and a new `entitie
   `sectional`, `glassCabinet`, `darkBookcase`, `mediaWall`, `wetBar`, `barCart`, `pokerTable`,
   `popcornMachine`, `treadmill`, `deskSetup`, `endTable`, `pedestalSink`, `tubOnly`, `tubShower`,
   `stairs`, `catTree`, `litterRobot`, `dehumidifier`, `airPurifier`, `washerDryer`, `showerStall`,
-  `daybed`, `walkInCloset`.
+  `daybed`, `walkInCloset`, `wallOven`, `fireplace` (with an optional fire and a wall TV that
+  takes a media player), `shelving`. The `kitchen` can leave out its `sink` or `cooktop`, the
+  `island` can have a gas `cooktop`, and coffee and end tables can be `round`.
 - A room gets a tab in the room filter only when a light, AC or entity is in it. Set `tab: true`
   or `tab: false` on a room to force a tab on or off; tab-less rooms still show in 3D.
 - A room of several rectangles: the extra ones say `part_of: "<room id>"`. They share the main

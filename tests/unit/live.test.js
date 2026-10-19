@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validatePlan } from '../../src/ha/validate.js';
 import { liveEntities } from '../../src/ha/live-fields.js';
-import { heatColor, personRoom, sameOriginPicture, coverOpen, fanSpeed, wattsLabel, daylightOf } from '../../src/ha/live.js';
+import { heatColor, personRoom, sameOriginPicture, coverOpen, fanSpeed, wattsLabel, daylightOf, screenOf } from '../../src/ha/live.js';
+import { fireplaceScreen } from '../../upstream/three/extras.js';
 
 const demo = JSON.parse(readFileSync(new URL('../../plans/demo.json', import.meta.url)));
 const clone = () => structuredClone(demo);
@@ -57,7 +58,7 @@ test('rooms, lights, entities, furniture and people check their fields', () => {
 
   const f = clone();
   f.furniture.find((x) => x.type === 'sofa').entity = 'media_player.demo_tv';
-  assert.throws(() => validatePlan(f), /only for tv and mediaWall/);
+  assert.throws(() => validatePlan(f), /only for tv, mediaWall, fireplace/);
   f.furniture.find((x) => x.type === 'sofa').entity = undefined;
   f.furniture.find((x) => x.type === 'tv').entity = 'light.demo_x';
   assert.throws(() => validatePlan(f), /media_player\.\*/);
@@ -134,4 +135,21 @@ test('cover, fan, power and sun readings', () => {
   assert.equal(daylightOf({ state: 'below_horizon', attributes: { elevation: -12 } }), 0);
   assert.equal(daylightOf({ state: 'above_horizon', attributes: { elevation: 35 } }), 1);
   assert.equal(daylightOf({ state: 'above_horizon', attributes: { elevation: 2 } }), 0.5);
+});
+
+test('a fireplace takes a media player like a mediaWall, but only with its TV', () => {
+  const p = clone();
+  const fp = p.furniture.find((f) => f.type === 'fireplace');
+  assert.equal(validatePlan(p).config.furniture.find((f) => f.type === 'fireplace').entity, 'media_player.demo_rec_tv');
+  fp.tv = false;
+  assert.throws(() => validatePlan(p), /"entity" needs "tv": true/);
+  fp.tv = true;
+  fp.entity = 'light.demo_x';
+  assert.throws(() => validatePlan(p), /media_player\.\*/);
+  // the tap target sits on the screen the model draws
+  const item = { type: 'fireplace', height: 1.2, depth: 0.4, screen: 1.5, tv: true };
+  const s = fireplaceScreen(item);
+  assert.deepEqual(screenOf(item), { local: [0, s.y - s.height / 2, s.z], width: 1.5 });
+  assert.equal(screenOf({ type: 'mediaWall' }).width, 1.45);
+  assert.equal(screenOf({ type: 'tv', width: 2 }).width, 1.68);
 });

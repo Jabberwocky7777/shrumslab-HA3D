@@ -1213,3 +1213,58 @@ test('taps still reach rooms and lights after the static meshes are merged', asy
   await page.mouse.click(box.x + spots.x, box.y + spots.y);
   await expect.poll(() => calls(page)).toContainEqual({ domain: 'light', service: 'turn_on', data: { entity_id: 'light.demo_kitchen_spots' } });
 });
+
+/* ---------- kitchen, fireplace and storage furniture ---------- */
+
+test('the wall oven, fireplace, shelving, cooktop island, split kitchen and round tables load without console errors', async ({ page }, info) => {
+  const consoleErrors = [];
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleErrors.push(m.text()); });
+  const urls = recordRequests(page);
+  const errors = await open(page);
+  const found = await page.evaluate(() => window.__test.card._ui.debug.world.findFurniture(() => true)
+    .map(({ item, group }) => ({ type: item.type, round: Boolean(item.round), meshes: (() => { let n = 0; group.traverse((o) => { if (o.isMesh) n++; }); return n; })(), floor: item.storey })));
+  for (const type of ['wallOven', 'fireplace', 'shelving', 'island', 'kitchen']) expect(found.map((f) => f.type)).toContain(type);
+  expect(found.filter((f) => f.round).map((f) => f.type).sort()).toEqual(['coffeeTable', 'endTable']);
+  // the kitchen: one hood and hob on the island, none on the run with "cooktop": false
+  await page.locator('house-control-card .room', { hasText: 'Kitchen' }).click();
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(3));
+  await page.screenshot({ path: info.outputPath('kitchen.png') });
+  await page.locator('house-control-card .room', { hasText: 'Rec room' }).click();
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(3));
+  await page.screenshot({ path: info.outputPath('fireplace.png') });
+  await page.locator('house-control-card .floors .floor-chip', { hasText: 'Basement' }).click();
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(3));
+  expect(errors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expectSameOrigin(urls, page.url());
+});
+
+test('the fireplace TV glows with its media player and taps open more-info; the fire flickers only while shown', async ({ page }) => {
+  await open(page);
+  const fireplaceTv = async () => (await liveState(page)).tvs.find((t) => t.entity === 'media_player.demo_rec_tv');
+  expect(await fireplaceTv()).toMatchObject({ on: false });
+  await setLive(page, 'media_player.demo_rec_tv', 'playing');
+  expect(await fireplaceTv()).toMatchObject({ on: true });
+  await page.locator('house-control-card .room', { hasText: 'Rec room' }).click();
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(6));
+  await page.evaluate(() => { window.__test.events.length = 0; });
+  const id = await page.evaluate(() => `tv${window.__test.card._ui.debug.config.furniture.filter((f) => f.entity).findIndex((f) => f.type === 'fireplace')}`);
+  await tapLive(page, id);
+  await expect.poll(() => page.evaluate(() => window.__test.events.filter((e) => e.type === 'hass-more-info').map((e) => e.entityId)))
+    .toEqual(['media_player.demo_rec_tv']);
+  // the fire: its glow changes while the floor is shown
+  const flame = () => page.evaluate(() => {
+    const { world } = window.__test.card._ui.debug;
+    const [{ group }] = world.findFurniture((it) => it.type === 'fireplace');
+    return group.getObjectByName('fire').material.emissiveIntensity;
+  });
+  const a = await flame();
+  await expect.poll(flame, { timeout: 20000 }).not.toBe(a);
+  // on the basement the main floor is hidden: the fire stops changing
+  await page.locator('house-control-card .floors .floor-chip', { hasText: 'Basement' }).click();
+  await page.evaluate(() => window.__test.card._ui.debug.world.settle(3));
+  await expect.poll(async () => (await loopStats(page)).sleeping, { timeout: 60000 }).toBe(true);
+  const b = await flame();
+  await page.waitForTimeout(800);
+  expect(await flame()).toBe(b);
+});

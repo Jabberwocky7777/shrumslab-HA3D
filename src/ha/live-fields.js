@@ -7,7 +7,7 @@ import { domainOf } from './sensitive.js';
 const ENTITY_ID = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
 export const OPENING_TYPES = ['door', 'window', 'open', 'garage'];
-export const SCREEN_FURNITURE = ['tv', 'mediaWall'];
+export const SCREEN_FURNITURE = ['tv', 'mediaWall', 'fireplace'];
 
 function need(cond, msg) {
   if (!cond) throw new ConfigError(msg);
@@ -87,7 +87,8 @@ export function applyLiveFields(raw, config, { exists = () => {} } = {}) {
   config.furniture = config.furniture.map((f, i) => {
     if (f.entity == null) return f;
     const what = `Furniture #${i + 1} (${f.type})`;
-    need(SCREEN_FURNITURE.includes(f.type), `${what}: "entity" is only for ${SCREEN_FURNITURE.join(' and ')}`);
+    need(SCREEN_FURNITURE.includes(f.type), `${what}: "entity" is only for ${SCREEN_FURNITURE.join(', ')} (with "tv": true)`);
+    need(f.type !== 'fireplace' || f.tv === true, `${what}: "entity" needs "tv": true, the TV above the mantel`);
     return { ...f, entity: entityOf(what, 'entity', f.entity, 'media_player', exists) };
   });
 

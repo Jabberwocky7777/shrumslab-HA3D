@@ -38,6 +38,7 @@ export function demoStates() {
       temperature: 23, current_temperature: 25.5, min_temp: 16, max_temp: 30, fan_mode: 'auto',
     }),
     plain('media_player.demo_tv', 'TV', 'playing', { media_title: 'Demo', entity_picture: '/tests/harness/demo-screen.svg' }),
+    plain('media_player.demo_rec_tv', 'Rec room TV', 'off'),
     plain('fan.demo_bedroom_fan', 'Ceiling fan', 'off'),
     plain('switch.demo_coffee_maker', 'Coffee maker', 'off'),
     plain('climate.demo_thermostat', 'Thermostat', 'heat', { current_temperature: 21.4, temperature: 22, hvac_modes: ['off', 'heat'] }),

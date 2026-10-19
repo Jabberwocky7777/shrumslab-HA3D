@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { MARKER_COLORS, drawIcon } from './markers.js';
 import { availabilityOf } from './mapping.js';
 import { roomOfArea, largestRect } from './rooms.js';
+import { fireplaceScreen } from '../../upstream/three/extras.js';
 
 const ALERT = new THREE.Color(MARKER_COLORS.alert);
 const OK = new THREE.Color('#5fd38b');
@@ -355,6 +356,42 @@ class FanSpinner {
   }
 }
 
+// A fireplace's fire ("fire": true) flickers softly: ambient like the fans, so it is drawn at the
+// capped rate, rests when nobody touches the card, and only moves on a floor that is shown.
+class FireFlicker {
+  constructor(floor) {
+    this.floor = floor;
+    this.ambient = true;
+    this.group = new THREE.Group();
+    this.items = []; // { floor, material, base }
+    this.t = 0;
+    this.visible = () => true;
+  }
+
+  update(dt) {
+    this.t += dt;
+    let any = false;
+    this.items.forEach((item, i) => {
+      if (!this.visible(item.floor)) return;
+      const t = this.t + i * 1.7;
+      const n = Math.sin(t * 7.3) * 0.5 + Math.sin(t * 13.1 + 1.2) * 0.3 + Math.sin(t * 3.1 + 0.4) * 0.2;
+      item.material.emissiveIntensity = item.base * (0.82 + 0.18 * n);
+      any = true;
+    });
+    return any;
+  }
+}
+
+/** Where a TV's tap target sits on its furniture: [x, y, z] and the screen's width. */
+export function screenOf(f) {
+  if (f.type === 'fireplace') {
+    const s = fireplaceScreen(f);
+    return { local: [0, s.y - s.height / 2, s.z], width: s.width };
+  }
+  if (f.type === 'mediaWall') return { local: [0, 1.02, -0.17], width: f.screen ?? 1.45 };
+  return { local: [0, 0.745, -0.11], width: (f.width ?? 1.7) * 0.84 };
+}
+
 /* ---------- the layer ---------- */
 
 /**
@@ -392,13 +429,14 @@ export function createLive(config, { lightOn = () => false } = {}) {
   const people = config.people.map((p, i) => new PersonUnit(p, i)); // placed on their floor by sync()
   const spinner = new FanSpinner(config.floors[0].id);
   units.push(spinner);
+  const fires = new FireFlicker(config.floors[0].id);
+  units.push(fires);
 
   const byId = new Map();
   for (const u of [...doors, ...garages]) byId.set(u.id, u);
   // TV screens: a hit box over each one; the screen's own material is found by attach().
   const tvs = config.furniture.filter((f) => f.entity && Array.isArray(f.pos)).map((f, i) => {
-    const local = f.type === 'mediaWall' ? [0, 1.02, -0.17] : [0, 0.745, -0.11];
-    const w = f.type === 'mediaWall' ? (f.screen ?? 1.45) : (f.width ?? 1.7) * 0.84;
+    const { local, width: w } = screenOf(f);
     const group = new THREE.Group();
     group.position.set(f.pos[0], f.y || 0, f.pos[1]);
     group.rotation.y = THREE.MathUtils.degToRad(f.rot || 0);
@@ -421,7 +459,11 @@ export function createLive(config, { lightOn = () => false } = {}) {
 
   function attach(w) {
     world = w;
-    if (w.floorAnimated) spinner.visible = w.floorAnimated;
+    if (w.floorAnimated) { spinner.visible = w.floorAnimated; fires.visible = w.floorAnimated; }
+    for (const { group, floor } of w.findFurniture((it) => it.type === 'fireplace' && it.fire)) {
+      const flame = group.getObjectByName('fire');
+      if (flame) fires.items.push({ floor, material: flame.material, base: flame.material.emissiveIntensity });
+    }
     for (const p of people) w.floorGroup(config.floors[0].id)?.add(p.group);
     // fans: the blades of "fan" lights, the icons of fan entities
     for (const l of config.lights) {

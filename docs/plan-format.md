@@ -114,7 +114,7 @@ floor. The card option `stacked_view_default: true` starts in that view.
 | --- | --- |
 | `rooms` | `id`, `name`, `rect: [x, z, width, depth]`, `floor` (the finish: `oak`, `walnut`, `tile`, `stone`, `carpet`). Rooms are rectangles: an L-shaped room is two rectangles, the second with `part_of` (see below). Where rooms touch, an inner wall appears. Optional `tab` (see below), `storey` when the plan has `floors`, `part_of`, and `area`: the Home Assistant area, or a list of areas, the room stands for (see below; set by **Import from Home Assistant…**). |
 | `openings` | `type` (`door`, `window`, `open`, `garage`), `from: [x, z]`, `to: [x, z]` on one wall line (same x or same z), windows also `sill`, `head`. Optional `storey`, and `contact`, `lock`, `cover` (see [below](#what-the-house-is-doing-new-in-this-card)) |
-| `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet`, and the extra models below |
+| `furniture` | `type`, `pos: [x, z]`, `rot`, plus `width`, `color`, `size`, `height`, `chairs`, `stools`, `upper` depending on the type: `sofa`, `armchair`, `coffeeTable`, `rug`, `tv`, `sideboard`, `dresser`, `desk`, `vanity`, `diningSet`, `island`, `kitchen`, `bed`, `wardrobe`, `bookshelf`, `plant`, `fridge`, `nightstand`, `bathtub`, `toilet`, and the extra models below. This card adds options to three of house-control's pieces, see [kitchen pieces](#kitchen-pieces-and-round-tables) |
 
 ### Rooms made of several rectangles
 
@@ -176,6 +176,28 @@ tab. To decide yourself, give the room `"tab": true` (always a tab, even when em
 { "id": "storage", "name": "Storage", "rect": [8.0, 8.2, 2.4, 2.0], "floor": "stone", "tab": true }
 ```
 
+### Kitchen pieces and round tables
+
+Three of house-control's own pieces take more options in this card (all optional, defaults in
+brackets):
+
+| `type` | Options |
+| --- | --- |
+| `kitchen` | `width` (3), `upper` (`true`: wall cabinets), `sink` (`true`), `cooktop` (`true`: the hob and, with `upper`, its hood), `front` (door colour), `top` (counter colour). Leave out `sink` or `cooktop` on some runs so an L-shaped kitchen made of several runs has one of each; with only one of them it sits in the middle of the run |
+| `island` | `width` (2.0), `stools` (3), `base` (cabinet colour, #39424f), `top` (counter colour), `cooktop` (`false`; `true`: a five-burner gas hob with grates in the middle of the top), `drawers` (`true`: drawer and door lines on the working side, away from the stools, and on both ends) |
+| `coffeeTable` | `width` (1.1), `round` (`false`; `true`: a round top, `diameter` 0.8 × `width`, on a pedestal, or on four legs with `"legs": 4`) |
+
+```json
+{ "type": "wallOven", "pos": [6.8, 0.33] },
+{ "type": "kitchen",  "pos": [8.4, 0.41], "width": 2.4, "cooktop": false },
+{ "type": "island",   "pos": [8.5, 3.75], "width": 2.2, "cooktop": true },
+{ "type": "fireplace", "pos": [0.28, 12.4], "rot": 90, "fire": true, "tv": true, "entity": "media_player.your_tv" }
+```
+
+Pieces stand against a wall with their back at `-z` (before `rot`). Exterior walls are 0.2 m thick
+and inner walls 0.1 m, so put something that hangs on the wall, such as a fireplace's TV, half a
+wall's thickness plus half its own depth away from the wall line.
+
 ### Extra furniture
 
 These come from this card (`upstream/three/extras.js`), not from house-control. Every option is
@@ -194,7 +216,10 @@ optional; the defaults are in brackets.
 | `popcornMachine` | — |
 | `treadmill` | Deck along z, console at the back: `length` (1.9), `width` (0.85) |
 | `deskSetup` | Desk with two monitors and an office chair: `width` (2.0), `depth` (0.7), `chair` (colour) |
-| `endTable` | `width` (0.5), `depth` (0.45), `height` (0.6), `color` |
+| `endTable` | `width` (0.5), `depth` (0.45), `height` (0.6), `color`, `round` (`false`; `true`: a round top, `diameter` from `width`, on a pedestal, or on four legs with `"legs": 4`) |
+| `wallOven` | Full-height cabinet tower with built-in appliances, facing forward: `width` (0.76), `depth` (0.65), `height` (2.25), `cabinet` (#ece9e2), `stack` (`"microwave+oven"`, `"double-oven"` or `"oven"`). Stainless fronts with glass windows, handles and a dark control strip; cabinet doors above |
+| `fireplace` | Mantel and surround against the wall: `width` (1.6), `height` (1.3), `depth` (0.35), `color` (#f3f1ec), `fire` (`false`; `true`: the firebox glows with a soft flicker), `tv` (`false`; `true`: a wall TV above the mantel, `screen` (1.3) wide), `entity` (with `tv`: a `media_player.*`, as on a `mediaWall`) |
+| `shelving` | Freestanding black metal shelving: `width` (1.2), `depth` (0.45), `height` (1.8), `shelves` (4), `color` (#222) |
 | `pedestalSink` | With a mirror above: `width` (0.6) |
 | `tubOnly`, `tubShower` | Bathtub, with or without a shower curtain: `length` (1.55) |
 | `stairs` | A straight flight rising towards the back: `width` (1.0), `length` (3.5), `rise` (2.6), `steps` (14), `color` |
@@ -384,13 +409,14 @@ whose `area` entries (or its name or id) matches, on that room's floor; see [Are
 in several parts shows them in its largest rectangle. When the state matches no room they are hidden; when it is
 `not_home` the header says they are away. `color` defaults to light blue.
 
-### Fans, TVs and power
+### Fans, TVs, fires and power
 
 | Where | Field | Meaning |
 | --- | --- | --- |
 | a light of type `fan` | `spin` (or `fan`) | A `fan.*`: the blades spin with its `percentage` and stop when it is off. `"light"`: they spin while the light is on (see [Fans](#fans)) |
 | an entity | `fan` | A plan entity whose entity is a `fan.*` spins its icon; `fan` can name another fan, or be `false` to keep the icon still. The blades of a `fan` light are not affected |
-| `tv` / `mediaWall` furniture | `entity` | A `media_player.*`: the screen glows while it plays or is paused, showing its picture when Home Assistant serves one itself (its own signed address, never another site). Tapping the screen opens more-info |
+| `tv` / `mediaWall` furniture, a `fireplace` with `"tv": true` | `entity` | A `media_player.*`: the screen glows while it plays or is paused, showing its picture when Home Assistant serves one itself (its own signed address, never another site). Tapping the screen opens more-info |
+| a `fireplace` | `fire: true` | The firebox glows and flickers softly. Like spinning fans it only moves on the floor you look at, at the card's `animation_fps`, and rests after `idle_pause` |
 | a light | `power` | A `sensor.*` in W or kW, shown on the light's tile while it is on: "100% · 18 W" |
 
 The card options `power` (the house's total, shown in the header) and `sun: true` (the 3D view
