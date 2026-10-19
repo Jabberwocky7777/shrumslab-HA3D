@@ -1063,8 +1063,18 @@ const settleLoop = async (page) => {
   await page.evaluate(() => window.__test.card._ui.debug.world.settle(10));
   await page.waitForTimeout(600);
 };
-// Waits until the loop has drawn nothing for half a second.
-const quiet = (page) => expect.poll(async () => (await countDuring(page, 500)).frames, { timeout: 20000 }).toBe(0);
+// Waits until the loop has nothing scheduled at all (no frame, no capped-rate timer): from then on
+// it draws nothing until something wakes it. Exact, whatever the frame rate (CI draws ~1 a second).
+const quiet = (page) => expect.poll(async () => (await loopStats(page)).sleeping, { timeout: 60000 }).toBe(true);
+// The renderer's numbers after a frame drawn now.
+const freshInfo = (page) => page.evaluate(async () => {
+  const { world } = window.__test.card._ui.debug;
+  const before = world.loopStats().renders;
+  world.wake(1);
+  const until = performance.now() + 15000;
+  while (world.loopStats().renders === before && performance.now() < until) await new Promise((r) => { setTimeout(r, 50); });
+  return world.renderInfo();
+});
 
 test('while only fans move, the frame rate is capped at animation_fps', async ({ page }) => {
   await open(page, '?animation_fps=10');
@@ -1078,6 +1088,7 @@ test('while only fans move, the frame rate is capped at animation_fps', async ({
 });
 
 test('after idle_pause the loop rests (no frames), the fans freeze, and a tap wakes it', async ({ page }) => {
+  test.setTimeout(180000); // software WebGL on CI: about a frame a second
   await open(page, '?idle_pause=2');
   await settleLoop(page);
   await expect.poll(async () => (await loopStats(page)).resting, { timeout: 10000 }).toBe(true);
@@ -1096,13 +1107,14 @@ test('after idle_pause the loop rests (no frames), the fans freeze, and a tap wa
   await page.mouse.click(box.x + 20, box.y + box.height - 60);
   expect((await loopStats(page)).resting).toBe(false);
   await expect.poll(async () => Math.abs((await recBlades(page)) - angle), { timeout: 10000 }).toBeGreaterThan(0.1);
-  expect((await countDuring(page, 1000)).frames).toBeGreaterThan(0);
+  await expect.poll(async () => (await countDuring(page, 1500)).frames, { timeout: 20000 }).toBeGreaterThan(0);
 });
 
 test('a spinning fan on a floor that is not shown (or dimmed) does not keep the loop awake', async ({ page }) => {
+  test.setTimeout(180000);
   await open(page);
   await settleLoop(page);
-  expect((await countDuring(page, 1000)).renders).toBeGreaterThan(0); // the rec fan, on the main floor
+  await expect.poll(async () => (await countDuring(page, 1500)).renders, { timeout: 20000 }).toBeGreaterThan(0); // the rec fan, on the main floor
   await page.locator('house-control-card .floors .floor-chip', { hasText: 'Basement' }).click();
   await settleLoop(page);
   await quiet(page); // with the fan still counted this would never happen
@@ -1133,12 +1145,10 @@ test('an entity with "fan": false keeps its icon still', async ({ page }) => {
 });
 
 test('draw calls stay within budget, and switching floors leaks no geometry or texture', async ({ page }) => {
+  test.setTimeout(180000);
   await open(page);
-  const info = () => page.evaluate(() => new Promise((r) => {
-    const { world } = window.__test.card._ui.debug;
-    world.wake(3);
-    setTimeout(() => r(world.renderInfo()), 700);
-  }));
+  await settleLoop(page);
+  const info = () => freshInfo(page);
   const main = await info();
   expect(Object.keys(main)).toEqual(expect.arrayContaining(['calls', 'triangles', 'geometries', 'textures', 'programs']));
   expect(main.calls).toBeLessThan(150);
@@ -1151,19 +1161,24 @@ test('draw calls stay within budget, and switching floors leaks no geometry or t
   await page.locator('house-control-card .floor-stack').click();
   await settleLoop(page);
   expect((await info()).calls).toBeLessThan(400);
-  // one full round first (the dimmed look is made once), then 20 more: nothing grows
+  // one full round first (the dimmed look is made once), then 20 more, each one drawn: nothing grows
   await page.locator('house-control-card .floor-stack').click();
   await chip('Main').click();
-  await page.waitForTimeout(300);
+  await settleLoop(page);
   const before = await info();
-  for (let i = 0; i < 20; i++) {
-    await chip(i % 2 ? 'Main' : 'Basement').click();
-    await page.locator('house-control-card .floor-stack').click();
-    await page.waitForTimeout(60);
-    await page.locator('house-control-card .floor-stack').click();
-  }
-  await chip('Main').click();
-  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const { world } = window.__test.card._ui.debug;
+    for (let i = 0; i < 20; i++) {
+      world.setFloor(i % 2 ? 'main' : 'basement');
+      world.settle(0.05);
+      world.setStacked(true);
+      world.settle(0.05);
+      world.setStacked(false);
+      world.settle(0.05);
+    }
+    world.setFloor('main');
+    world.settle(0.05);
+  });
   const after = await info();
   expect(after.geometries).toBeLessThanOrEqual(before.geometries);
   expect(after.textures).toBeLessThanOrEqual(before.textures);
