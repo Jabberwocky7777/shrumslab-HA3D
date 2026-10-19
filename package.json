@@ -17,7 +17,7 @@
     "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
-    "lucide": "0.544.0",
+    "lucide": "1.58.0",
     "three": "0.186.1"
   },
   "devDependencies": {
